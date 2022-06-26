@@ -70,8 +70,8 @@ func main() {
 }
 
 func addMsg(ctx context.Context, broker gmq.Broker, queueName, payloadStr, id string) {
-	if payloadStr == "" || id == "" {
-		fmt.Println("both payload and id are required")
+	if payloadStr == "" && id == "" {
+		fmt.Println("payload or id is required")
 		return
 	}
 
