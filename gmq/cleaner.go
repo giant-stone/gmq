@@ -13,18 +13,18 @@ type Cleaner struct {
 }
 
 type CleanerParams struct {
-	ctx        context.Context
-	broker     Broker
-	logger     Logger
-	queueNames map[string]struct{}
+	Ctx        context.Context
+	Broker     Broker
+	Logger     Logger
+	QueueNames map[string]struct{}
 }
 
 func NewCleaner(params CleanerParams) *Cleaner {
 	return &Cleaner{
-		ctx:        params.ctx,
-		broker:     params.broker,
-		logger:     params.logger,
-		queueNames: params.queueNames,
+		ctx:        params.Ctx,
+		broker:     params.Broker,
+		logger:     params.Logger,
+		queueNames: params.QueueNames,
 	}
 }
 

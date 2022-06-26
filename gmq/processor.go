@@ -26,36 +26,36 @@ type Processor struct {
 }
 
 type ProcessorParams struct {
-	ctx       context.Context
-	broker    Broker
-	handler   Handler
-	logger    Logger
-	queueName string
+	Ctx       context.Context
+	Broker    Broker
+	Handler   Handler
+	Logger    Logger
+	QueueName string
 
-	workerNum              uint16
-	workerWorkIntervalFunc FuncWorkInterval
+	WorkerNum              uint16
+	WorkerWorkIntervalFunc FuncWorkInterval
 }
 
 func NewProcessor(params ProcessorParams) *Processor {
-	if params.workerNum == 0 {
-		params.workerNum = uint16(runtime.NumCPU())
+	if params.WorkerNum == 0 {
+		params.WorkerNum = uint16(runtime.NumCPU())
 	}
 
-	if params.queueName == "" {
-		params.queueName = DefaultQueueName
+	if params.QueueName == "" {
+		params.QueueName = DefaultQueueName
 	}
 
 	return &Processor{
-		broker:        params.broker,
-		ctx:           params.ctx,
+		broker:        params.Broker,
+		ctx:           params.Ctx,
 		errLogLimiter: rate.NewLimiter(rate.Every(3*time.Second), 1),
-		handler:       params.handler,
-		logger:        params.logger,
-		sema:          make(chan struct{}, params.workerNum),
+		handler:       params.Handler,
+		logger:        params.Logger,
+		sema:          make(chan struct{}, params.WorkerNum),
 
-		workerNum:              params.workerNum,
-		queueName:              params.queueName,
-		workerWorkIntervalFunc: params.workerWorkIntervalFunc,
+		workerNum:              params.WorkerNum,
+		queueName:              params.QueueName,
+		workerWorkIntervalFunc: params.WorkerWorkIntervalFunc,
 	}
 }
 

@@ -45,11 +45,11 @@ func (it *Server) Run(mux *Mux) (err error) {
 	for queueName := range mux.GetPatterns() {
 		queueCfg, ok := it.cfg.QueueCfgs[queueName]
 		params := ProcessorParams{
-			ctx:       it.ctx,
-			broker:    it.broker,
-			handler:   mux,
-			logger:    it.logger,
-			queueName: queueName,
+			Ctx:       it.ctx,
+			Broker:    it.broker,
+			Handler:   mux,
+			Logger:    it.logger,
+			QueueName: queueName,
 		}
 
 		if ok {
@@ -57,11 +57,11 @@ func (it *Server) Run(mux *Mux) (err error) {
 				switch opt.Type() {
 				case OptTypeQueueWorkerNum:
 					{
-						params.workerNum = opt.Value().(uint16)
+						params.WorkerNum = opt.Value().(uint16)
 					}
 				case OptTypeQueueWorkerWorkIntervalFunc:
 					{
-						params.workerWorkIntervalFunc = opt.Value().(FuncWorkInterval)
+						params.WorkerWorkIntervalFunc = opt.Value().(FuncWorkInterval)
 					}
 				}
 			}
@@ -79,10 +79,10 @@ func (it *Server) Run(mux *Mux) (err error) {
 
 	// auto-delete dead messages
 	it.cleaner = NewCleaner(CleanerParams{
-		ctx:        it.ctx,
-		broker:     it.broker,
-		queueNames: it.queueNames,
-		logger:     it.logger,
+		Ctx:        it.ctx,
+		Broker:     it.broker,
+		QueueNames: it.queueNames,
+		Logger:     it.logger,
 	})
 	it.cleaner.start()
 
