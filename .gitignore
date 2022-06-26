@@ -1,0 +1,11 @@
+# binaries
+*.exe
+*.bin
+
+## temporary files
+*~
+*.bak
+*.swp
+.vscode/
+
+ignore/
