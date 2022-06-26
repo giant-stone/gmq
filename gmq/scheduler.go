@@ -13,28 +13,27 @@ type Scheduler struct {
 }
 
 type SchedulerParams struct {
-	ctx      context.Context
-	broker   Broker
-	logger   Logger
-	location *time.Location
+	Ctx      context.Context
+	Broker   Broker
+	Logger   Logger
+	Location *time.Location
 }
 
 func NewScheduler(parmas SchedulerParams) *Scheduler {
-
 	loc, err := time.LoadLocation("UTC")
 	if err != nil {
 		panic(`LoadLocation("UTC") fail`)
 	}
 
-	if parmas.location == nil {
-		parmas.location = loc
+	if parmas.Location == nil {
+		parmas.Location = loc
 	}
 
 	return &Scheduler{
-		ctx:      parmas.ctx,
-		broker:   parmas.broker,
-		logger:   parmas.logger,
-		location: parmas.location,
+		ctx:      parmas.Ctx,
+		broker:   parmas.Broker,
+		logger:   parmas.Logger,
+		location: parmas.Location,
 	}
 }
 
