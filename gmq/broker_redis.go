@@ -2,7 +2,6 @@ package gmq
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/giant-stone/go/gstr"
@@ -11,14 +10,14 @@ import (
 	"github.com/google/uuid"
 )
 
-func NewBrokerRedis(dsn string, namespace string) (rs Broker, err error) {
+func NewBrokerRedis(dsn string) (rs Broker, err error) {
 	opts, err := redis.ParseURL(dsn)
 	if err != nil {
 		return
 	}
 
 	cli, _ := MakeRedisUniversalClient(opts).(redis.UniversalClient)
-	return &BrokerRedis{cli: cli, clock: NewWallClock(), namespace: namespace}, nil
+	return &BrokerRedis{cli: cli, clock: NewWallClock(), namespace: Namespace}, nil
 }
 
 func MakeRedisUniversalClient(opts *redis.Options) (rs interface{}) {
@@ -40,7 +39,7 @@ func (it *BrokerRedis) Close() error {
 }
 
 func (it *BrokerRedis) Init(ctx context.Context, queueName string) (err error) {
-	_, err = it.cli.SAdd(ctx, NewKeyQueueList(it.namespace), queueName).Result()
+	_, err = it.cli.SAdd(ctx, NewKeyQueueList(), queueName).Result()
 	return
 }
 
@@ -76,35 +75,38 @@ const (
 )
 
 func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClient) (rs *Msg, err error) {
-	payloadRaw := msg.GetPayload()
+	payload := msg.GetPayload()
 	var msgId string
 	customMsgId := msg.GetId()
-	if customMsgId != "" {
+	if customMsgId == "" {
 		msgId = uuid.NewString()
 	}
 
-	queueName := DefaultQueueName
+	queueName := msg.GetQueue()
 
 	for _, opt := range opts {
 		switch opt.Type() {
 		case OptTypeQueueName:
 			{
-				queueName = opt.Value().(string)
+				value := opt.Value().(string)
+				if value != "" {
+					queueName = value
+				}
 			}
 		}
 	}
 
-	payload, err := json.Marshal(payloadRaw)
-	if err != nil {
-		return
+	if queueName == "" {
+		queueName = DefaultQueueName
 	}
 
+	nowNano := it.clock.Now().UnixNano()
 	keys := []string{NewKeyMsgDetail(it.namespace, queueName, msgId), NewKeyQueuePending(it.namespace, queueName)}
 	args := []interface{}{
 		payload,
 		MsgStatePending,
 		msgId,
-		it.clock.Now().UnixNano(),
+		nowNano,
 	}
 
 	resI, err := scriptEnqueue.Run(ctx, it.cli, keys, args...).Result()
@@ -124,9 +126,11 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 	}
 
 	return &Msg{
-		Payload: payloadRaw,
+		Created: nowNano,
 		Id:      msgId,
+		Payload: payload,
 		Queue:   queueName,
+		State:   MsgStatePending,
 	}, nil
 }
 
@@ -190,15 +194,8 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 		return
 	}
 
-	payloadRaw := map[string]interface{}{}
-	err = json.Unmarshal([]byte(payload), &payloadRaw)
-	if err != nil {
-		// TODO: move this message into failed queue
-		return
-	}
-
 	return &Msg{
-		Payload: payloadRaw,
+		Payload: []byte(payload),
 		Id:      msgId,
 		Queue:   queueName,
 	}, nil
@@ -333,14 +330,19 @@ func (it *BrokerRedis) Get(ctx context.Context, queueName, msgId string) (msg *M
 		return
 	}
 
-	var payload map[string]interface{}
-	err = json.Unmarshal([]byte(values["payload"]), &payload)
-	if err != nil {
+	if len(values) == 0 {
+		err = ErrNoMsg
+		return
+	}
+
+	payload, ok := values["payload"]
+	if !ok {
+		err = ErrInternal
 		return
 	}
 
 	return &Msg{
-		Payload:   payload,
+		Payload:   []byte(payload),
 		Id:        msgId,
 		Queue:     queueName,
 		State:     values["state"],
@@ -358,8 +360,8 @@ type QueueStat struct {
 	Failed     int64 // occured error, and/or pending to retry
 }
 
-func (it *BrokerRedis) listQueues(ctx context.Context, cli redis.UniversalClient) (rs []string, err error) {
-	reply, err := cli.Do(ctx, "smembers", NewKeyQueueList(it.namespace)).Slice()
+func (it *BrokerRedis) listQueues(ctx context.Context) (rs []string, err error) {
+	reply, err := it.cli.Do(ctx, "smembers", NewKeyQueueList()).Slice()
 	if err != nil {
 		return
 	}
@@ -375,7 +377,7 @@ func (it *BrokerRedis) listQueues(ctx context.Context, cli redis.UniversalClient
 }
 
 func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error) {
-	queueNames, err := it.listQueues(ctx, it.cli)
+	queueNames, err := it.listQueues(ctx)
 	if err != nil {
 		return
 	}
@@ -397,5 +399,45 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 			Failed:     failed,
 		})
 	}
+	return
+}
+
+type QueueDailyStat struct {
+	Date      string // YYYY-MM-DD in UTC
+	Processed int64
+	Failed    int64
+}
+
+func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *QueueDailyStat, err error) {
+	queueNames, err := it.listQueues(ctx)
+	if err != nil {
+		return
+	}
+
+	rs = &QueueDailyStat{Date: date}
+	for _, queueName := range queueNames {
+		processed, _ := it.cli.Get(ctx, NewKeyDailyStatProcessed(it.namespace, queueName, date)).Result()
+		failed, _ := it.cli.Get(ctx, NewKeyDailyStatFailed(it.namespace, queueName, date)).Result()
+
+		if processed != "" {
+			value := gstr.Atoi64(processed)
+			if value > 0 {
+				rs.Processed += value
+			}
+		}
+
+		if failed != "" {
+			value := gstr.Atoi64(failed)
+			if value > 0 {
+				rs.Failed += value
+			}
+		}
+	}
+
+	return
+}
+
+func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err error) {
+	// TBD
 	return
 }

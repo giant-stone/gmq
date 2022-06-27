@@ -1,14 +1,13 @@
 package gmq
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/giant-stone/go/gstr"
 )
 
 type Msg struct {
-	Payload map[string]interface{}
+	Payload []byte
 	Id      string
 	Queue   string
 
@@ -18,7 +17,7 @@ type Msg struct {
 	Processed int64
 }
 
-func (it *Msg) GetPayload() map[string]interface{} {
+func (it *Msg) GetPayload() []byte {
 	return it.Payload
 }
 
@@ -31,7 +30,6 @@ func (it *Msg) GetQueue() string {
 }
 
 func (it *Msg) String() string {
-	payload, _ := json.Marshal(it.Payload)
-	shorten := gstr.ShortenWith(string(payload), 50, gstr.DefaultShortenSuffix)
-	return fmt.Sprintf("<Msg id=%s payload=%s>", it.Id, shorten)
+	shorten := gstr.ShortenWith(string(it.Payload), 50, gstr.DefaultShortenSuffix)
+	return fmt.Sprintf("<Msg queue=%s id=%s payload=%s>", it.Queue, it.Id, shorten)
 }

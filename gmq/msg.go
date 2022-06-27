@@ -1,7 +1,7 @@
 package gmq
 
 type IMsg interface {
-	GetPayload() map[string]interface{}
+	GetPayload() []byte
 	GetId() string
 	GetQueue() string
 	String() string
