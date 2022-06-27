@@ -15,10 +15,13 @@ type Broker interface {
 	DeleteAgo(ctx context.Context, queueName string, seconds int64) error
 
 	Enqueue(ctx context.Context, msg IMsg, opts ...OptionClient) (*Msg, error)
+	Fail(ctx context.Context, msg IMsg, errFail error) error
 	Get(ctx context.Context, queueName, msgId string) (*Msg, error)
 	GetStats(ctx context.Context) ([]*QueueStat, error)
 	Init(ctx context.Context, queueName string) error
+
 	Ping(ctx context.Context) error
+	GetStatsByDate(ctx context.Context, YYYYMMDD string) (*QueueDailyStat, error)
 
 	// SetClock custom internal clock for testing
 	SetClock(c Clock)

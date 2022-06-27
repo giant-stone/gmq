@@ -89,7 +89,6 @@ func (it *Processor) exec() {
 			switch {
 			case errors.Is(err, ErrNoMsg):
 				{
-					it.logger.Debugf("queue=%s are empty", it.queueName)
 					time.Sleep(time.Second)
 					<-it.sema
 					return
@@ -105,7 +104,6 @@ func (it *Processor) exec() {
 			}
 
 			if msg == nil {
-				it.logger.Warn("msg is empty")
 				<-it.sema
 				return
 			}
@@ -123,9 +121,11 @@ func (it *Processor) exec() {
 				it.handleSuccessMsg(msg)
 			}
 
-			if it.workerWorkIntervalFunc != nil && remain > 0 {
-				// TODO: we should move this msg into waiting queue before it take by next ProcessMsg call?
-				time.Sleep(time.Millisecond * time.Duration(remain))
+			if err != context.DeadlineExceeded {
+				if it.workerWorkIntervalFunc != nil && remain > 0 {
+					// TODO: we should move this msg into waiting queue before it take by next ProcessMsg call?
+					time.Sleep(time.Millisecond * time.Duration(remain))
+				}
 			}
 
 			<-it.sema
@@ -134,8 +134,10 @@ func (it *Processor) exec() {
 }
 
 func (it *Processor) handleFailedMsg(msg IMsg, err error) {
-	// TBD.
-	return
+	errFail := it.broker.Fail(it.ctx, msg, err)
+	if errFail != nil && it.errLogLimiter.Allow() {
+		it.logger.Errorf("queue=%s broker.Fail %v", it.queueName, errFail)
+	}
 }
 
 func (it *Processor) handleSuccessMsg(msg IMsg) {

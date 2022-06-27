@@ -3,6 +3,10 @@ package gmq
 import "fmt"
 
 const (
+	DefaultInternalName = "gmq"
+)
+
+const (
 	DefaultQueueName = "default"
 )
 
@@ -17,10 +21,11 @@ const (
 	QueueNamePaused = "paused"
 
 	QueueNameDailyStatProcessed = "processed"
+	QueueNameDailyStatFailed    = "failed"
 )
 
-func NewKeyQueueList(ns string) string {
-	return fmt.Sprintf("%s:%s", ns, QueueNameList)
+func NewKeyQueueList() string {
+	return fmt.Sprintf("%s:%s", DefaultInternalName, QueueNameList)
 }
 
 func NewKeyQueuePending(ns, queueName string) string {
@@ -50,4 +55,9 @@ func NewKeyQueueFailed(ns, queueName string) string {
 // gmq:<queueName>:processed:<YYYY-MM-DD>
 func NewKeyDailyStatProcessed(ns, queueName, YYYYMMDD string) string {
 	return fmt.Sprintf("%s:%s:%s:%s", ns, queueName, QueueNameDailyStatProcessed, YYYYMMDD)
+}
+
+// gmq:<queueName>:failed:<YYYY-MM-DD>
+func NewKeyDailyStatFailed(ns, queueName, YYYYMMDD string) string {
+	return fmt.Sprintf("%s:%s:%s:%s", ns, queueName, QueueNameDailyStatFailed, YYYYMMDD)
 }

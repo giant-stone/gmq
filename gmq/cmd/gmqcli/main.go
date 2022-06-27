@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/giant-stone/go/glogging"
+	"github.com/giant-stone/go/gtime"
 	"github.com/giant-stone/go/gutil"
 
 	"github.com/giant-stone/gmq/gmq"
@@ -49,7 +51,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	broker, err := gmq.NewBrokerRedis(dsnRedis, "")
+	broker, err := gmq.NewBrokerRedis(dsnRedis)
 	gutil.ExitOnErr(err)
 	ctx := context.Background()
 
@@ -75,16 +77,10 @@ func addMsg(ctx context.Context, broker gmq.Broker, queueName, payloadStr, id st
 		return
 	}
 
-	payload := map[string]interface{}{}
-	err := json.Unmarshal([]byte(payloadStr), &payload)
-	gutil.ExitOnErr(err)
-
-	_msg := &gmq.Msg{
-		Payload: payload,
+	rs, err := broker.Enqueue(ctx, &gmq.Msg{
+		Payload: []byte(payloadStr),
 		Id:      id,
-	}
-
-	rs, err := broker.Enqueue(ctx, _msg, gmq.OptQueueName(queueName))
+	}, gmq.OptQueueName(queueName))
 	gutil.ExitOnErr(err)
 
 	dat, _ := json.Marshal(rs)
@@ -95,30 +91,45 @@ func printStats(ctx context.Context, broker gmq.Broker) {
 	queues, err := broker.GetStats(ctx)
 	gutil.ExitOnErr(err)
 
-	fmt.Print("\n")
+	fmt.Println("")
 	fmt.Print("# gmq stats \n\n")
 	if len(queues) == 0 {
-		fmt.Println("not found")
+		fmt.Println("Related info not found. Do consumer(s) have not start yet?")
 	} else {
 		for _, rsStat := range queues {
-			fmt.Printf("## queue=%s\n", rsStat.Name)
-			if gutil.CheckErr(err) {
-				continue
-			}
-			fmt.Printf("total=%d pending=%d waiting=%d processing=%d failed=%d \n",
-				rsStat.Total, rsStat.Pending, rsStat.Waiting, rsStat.Processing, rsStat.Failed)
-			fmt.Println("")
+			fmt.Printf("queue=%s total=%d pending=%d waiting=%d processing=%d failed=%d \n\n",
+				rsStat.Name,
+				rsStat.Total,
+				rsStat.Pending,
+				rsStat.Waiting,
+				rsStat.Processing,
+				rsStat.Failed,
+			)
 		}
+
+		fmt.Print("## daily stats \n\n")
+		date := gtime.UnixTime2YyyymmddUtc(time.Now().Unix())
+		dailyStats, err := broker.GetStatsByDate(ctx, date)
+		gutil.ExitOnErr(err)
+		fmt.Printf("date=%s(UTC) processed=%d failed=%d \n\n", dailyStats.Date, dailyStats.Processed, dailyStats.Failed)
 	}
 }
 
 func getMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
 	msg, err := broker.Get(ctx, queueName, msgId)
-	gutil.ExitOnErr(err)
+	if err != nil {
+		if err == gmq.ErrNoMsg {
+			fmt.Printf("message matched queue=%s id=%s not found", queueName, msgId)
+			return
+		}
+		gutil.ExitOnErr(err)
+	}
+
+	fmt.Println("RAW\n", msg)
 
 	dat, err := json.MarshalIndent(msg, "", "  ")
 	gutil.ExitOnErr(err)
-	fmt.Println(string(dat))
+	fmt.Println("INTERNAL\n", string(dat))
 }
 
 func delMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
