@@ -51,8 +51,8 @@ func (it *BrokerRedis) Init(ctx context.Context, queueName string) (err error) {
 // --
 // ARGV[1] -> <message payload>
 // ARGV[2] -> "pending"
-// ARGV[2] -> <msgId>
-// ARGV[3] -> <current unix time in nsec>
+// ARGV[3] -> <msgId>
+// ARGV[4] -> <current unix time in nsec>
 //
 // Output:
 // Returns 0 if successfully enqueued
@@ -76,9 +76,8 @@ const (
 
 func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClient) (rs *Msg, err error) {
 	payload := msg.GetPayload()
-	var msgId string
-	customMsgId := msg.GetId()
-	if customMsgId == "" {
+	msgId := msg.GetId()
+	if msgId == "" {
 		msgId = uuid.NewString()
 	}
 
