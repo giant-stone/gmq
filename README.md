@@ -2,6 +2,12 @@
 
 gmq 一个简单消息队列
 
+[![Go](https://github.com/giant-stone/gmq/actions/workflows/go.yml/badge.svg)](https://github.com/giant-stone/gmq/actions/workflows/go.yml)
+[![CodeQL](https://github.com/giant-stone/gmq/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/giant-stone/gmq/actions/workflows/codeql-analysis.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/giant-stone/gmq)](https://goreportcard.com/report/github.com/giant-stone/gmq)
+[![GoDoc](https://godoc.org/github.com/giant-stone/gmq?status.svg)](https://godoc.org/github.com/giant-stone/gmq)
+
+
 特性
 
 - [ ] 处理消息失败默认自动存档
