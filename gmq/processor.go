@@ -146,3 +146,7 @@ func (it *Processor) handleSuccessMsg(msg IMsg) {
 		it.logger.Errorf("queue=%s broker.Complete %v", it.queueName, err)
 	}
 }
+
+func (it *Processor) shutdown() {
+	close(it.sema)
+}

@@ -20,6 +20,10 @@ func NewBrokerRedis(dsn string) (rs Broker, err error) {
 	return &BrokerRedis{cli: cli, clock: NewWallClock(), namespace: Namespace}, nil
 }
 
+func NewBrokerFromRedisClient(cli redis.UniversalClient) (rs Broker, err error) {
+	return &BrokerRedis{cli: cli, clock: NewWallClock(), namespace: Namespace}, nil
+}
+
 func MakeRedisUniversalClient(opts *redis.Options) (rs interface{}) {
 	return redis.NewClient(opts)
 }

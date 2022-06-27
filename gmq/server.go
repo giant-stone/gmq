@@ -9,7 +9,7 @@ import (
 
 type Server struct {
 	ctx     context.Context
-	cfg     Config
+	cfg     *Config
 	cleaner *Cleaner
 	broker  Broker
 	logger  Logger
@@ -18,7 +18,11 @@ type Server struct {
 	queueNames map[string]struct{}
 }
 
-func NewServer(ctx context.Context, b Broker, cfg Config) *Server {
+func NewServer(ctx context.Context, b Broker, cfg *Config) *Server {
+	if cfg == nil {
+		cfg = &Config{}
+	}
+
 	var logger Logger
 	if cfg.Logger == nil {
 		logger = glogging.Sugared
@@ -87,4 +91,12 @@ func (it *Server) Run(mux *Mux) (err error) {
 	it.cleaner.start()
 
 	return nil
+}
+
+func (it *Server) Shutdown() {
+	for _, p := range it.processors {
+		p.shutdown()
+	}
+
+	it.broker.Close()
 }
