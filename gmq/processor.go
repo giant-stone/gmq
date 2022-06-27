@@ -148,5 +148,4 @@ func (it *Processor) handleSuccessMsg(msg IMsg) {
 }
 
 func (it *Processor) shutdown() {
-	close(it.sema)
 }
