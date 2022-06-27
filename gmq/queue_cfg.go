@@ -1,9 +1,9 @@
 package gmq
 
 type QueueCfg struct {
-	opts []OptionQueue
+	opts []OptionServer
 }
 
-func NewQueueCfg(opts ...OptionQueue) *QueueCfg {
+func NewQueueCfg(opts ...OptionServer) *QueueCfg {
 	return &QueueCfg{opts: opts}
 }

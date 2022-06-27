@@ -37,7 +37,7 @@ func NewScheduler(parmas SchedulerParams) *Scheduler {
 	}
 }
 
-func (it *Scheduler) Register(cronspec string, msg IMsg, opts ...OptionQueue) (entryId string, err error) {
+func (it *Scheduler) Register(cronspec string, msg IMsg, opts ...OptionServer) (entryId string, err error) {
 	// TBD.
 	return
 }

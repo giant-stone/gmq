@@ -55,11 +55,11 @@ func (it *Server) Run(mux *Mux) (err error) {
 		if ok {
 			for _, opt := range queueCfg.opts {
 				switch opt.Type() {
-				case OptTypeQueueWorkerNum:
+				case OptTypeServerWorkerNum:
 					{
 						params.WorkerNum = opt.Value().(uint16)
 					}
-				case OptTypeQueueWorkerWorkIntervalFunc:
+				case OptTypeServerWorkerWorkIntervalFunc:
 					{
 						params.WorkerWorkIntervalFunc = opt.Value().(FuncWorkInterval)
 					}
