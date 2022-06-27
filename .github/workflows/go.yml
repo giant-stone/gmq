@@ -15,7 +15,6 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-latest
         go-version: [1.16]
         redis-version: [5, 6]
         
