@@ -15,6 +15,10 @@ func NewClient(dsn string) (rs *Client, err error) {
 	return &Client{broker: broker}, nil
 }
 
+func NewClientFromBroker(broker Broker) (rs *Client, err error) {
+	return &Client{broker: broker}, nil
+}
+
 // Close closes the redis connection.
 func (it *Client) Close() error {
 	return it.broker.Close()
