@@ -7,7 +7,6 @@ gmq 一个简单消息队列
 [![Go Report Card](https://goreportcard.com/badge/github.com/giant-stone/gmq)](https://goreportcard.com/report/github.com/giant-stone/gmq)
 [![GoDoc](https://godoc.org/github.com/giant-stone/gmq?status.svg)](https://godoc.org/github.com/giant-stone/gmq)
 
-
 特性
 
 - [ ] 处理消息失败默认自动存档
@@ -17,6 +16,7 @@ gmq 一个简单消息队列
 - [ ] 网页端队列管理工具,自带简易验证
 - [x] 命令行队列管理工具
 - [x] 自定义消费间隔
+- [x] 自定义时限内消息去重
 
 参考了 [hibiken/asynq](https://github.com/hibiken/asynq) 实现，差异
 
@@ -44,3 +44,7 @@ gmq 一个简单消息队列
                                                     +-> failed
 
 存储中的消息总数 total = pending + waiting + processing + failed
+
+## Quickstart
+
+TBD.
