@@ -2,7 +2,6 @@ package gmq
 
 import (
 	"context"
-	"time"
 
 	"github.com/giant-stone/go/gstr"
 	"github.com/giant-stone/go/gtime"
@@ -170,7 +169,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	}
 	args := []interface{}{
 		NewKeyMsgDetail(it.namespace, queueName, ""),
-		time.Now().UnixMilli(),
+		it.clock.Now().UnixMilli(),
 	}
 
 	resI, err := scriptDequeue.Run(ctx, it.cli, keys, args...).Result()
