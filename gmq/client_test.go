@@ -35,7 +35,7 @@ func TestClient_Enqueue(t *testing.T) {
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, gmq.MsgStatePending, msgGot.State, "msg.State")
 	require.Less(t, int64(0), msgGot.Created, "msg.Created")
-	require.Equal(t, int64(0), msgGot.Processed, "msg.Processed")
+	require.Equal(t, int64(0), msgGot.Processedat, "msg.Processedat")
 
 	// validate message via broker lower API
 	msgGot, err = broker.Get(context.Background(), queueName, msgId)
@@ -45,7 +45,7 @@ func TestClient_Enqueue(t *testing.T) {
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, gmq.MsgStatePending, msgGot.State, "msg.State")
 	require.Less(t, int64(0), msgGot.Created, "msg.Created")
-	require.Equal(t, int64(0), msgGot.Processed, "msg.Processed")
+	require.Equal(t, int64(0), msgGot.Processedat, "msg.Processedat")
 }
 
 func TestClient_EnqueueDuplicatedMsg(t *testing.T) {
