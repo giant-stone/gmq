@@ -13,8 +13,8 @@ type Msg struct {
 
 	State string
 
-	Created   int64
-	Processed int64
+	Created     int64
+	Processedat int64
 }
 
 func (it *Msg) GetPayload() []byte {
