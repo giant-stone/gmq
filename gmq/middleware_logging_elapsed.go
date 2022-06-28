@@ -16,7 +16,7 @@ func LoggingElapsed(h Handler) Handler {
 			return err
 		}
 
-		shorten := gstr.ShortenWith(msg.String(), 80, gstr.DefaultShortenSuffix)
+		shorten := gstr.ShortenWith(msg.String(), 100, gstr.DefaultShortenSuffix)
 		glogging.Sugared.Debugf("process %s elapsed time %v", shorten, time.Since(start))
 		return nil
 	})
