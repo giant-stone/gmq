@@ -2,11 +2,17 @@ package gmq
 
 import (
 	"context"
+	"time"
 
 	"github.com/giant-stone/go/gstr"
 	"github.com/giant-stone/go/gtime"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
+)
+
+const (
+	LuaReturnCodeSucc = iota // confirm to POSIX shell/C return code common rule, 0 means successfully
+	LuaReturnCodeError
 )
 
 func NewBrokerRedis(dsn string) (rs Broker, err error) {
@@ -54,8 +60,8 @@ func (it *BrokerRedis) Init(ctx context.Context, queueName string) (err error) {
 // --
 // ARGV[1] -> <message payload>
 // ARGV[2] -> "pending"
-// ARGV[3] -> <msgId>
-// ARGV[4] -> <current unix time in nsec>
+// ARGV[3] -> <current unix time in milliseconds>
+// ARGV[4] -> <msgId>
 //
 // Output:
 // Returns 0 if successfully enqueued
@@ -67,15 +73,39 @@ end
 redis.call("HSET", KEYS[1],
            "payload", ARGV[1],
            "state",   ARGV[2],
-           "created", ARGV[4])
-redis.call("LPUSH", KEYS[2], ARGV[3])
+           "created", ARGV[3])
+redis.call("LPUSH", KEYS[2], ARGV[4])
 return 0
 `)
 
-const (
-	LuaReturnCodeSucc = iota
-	LuaReturnCodeError
-)
+// scriptEnqueueUnique enqueues a message with unique in duration constraint
+//
+// Input:
+// KEYS[1] -> gmq:<queueName>:uniq:<msgId>
+// KEYS[2] -> gmq:<queueName>:msg:<msgId>
+// KEYS[3] -> gmq:<queueName>:pending
+// --
+// ARGV[1] -> <msg unique in duration in milliseconds>
+// ARGV[2] -> <message payload>
+// ARGV[3] -> "pending"
+// ARGV[4] -> <current unix time in milliseconds>
+// ARGV[5] -> <msgId>
+//
+// Output:
+// Returns 0 if successfully enqueued
+// Returns 1 if task ID already exists
+var scriptEnqueueUnique = redis.NewScript(`
+if redis.call("EXISTS", KEYS[1]) == 1 then
+	return 1
+end
+redis.call("PSETEX", KEYS[1], ARGV[1], ARGV[5])
+redis.call("HSET", KEYS[2],
+           "payload", ARGV[2],
+           "state",   ARGV[3],
+           "created", ARGV[4])
+redis.call("LPUSH", KEYS[3], ARGV[5])
+return 0
+`)
 
 func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClient) (rs *Msg, err error) {
 	payload := msg.GetPayload()
@@ -86,6 +116,7 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 
 	queueName := msg.GetQueue()
 
+	var uniqueInMs int64
 	for _, opt := range opts {
 		switch opt.Type() {
 		case OptTypeQueueName:
@@ -93,6 +124,13 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 				value := opt.Value().(string)
 				if value != "" {
 					queueName = value
+				}
+			}
+		case OptTypeUniqueIn:
+			{
+				value := int64(opt.Value().(time.Duration).Milliseconds())
+				if value > 0 {
+					uniqueInMs = value
 				}
 			}
 		}
@@ -103,15 +141,32 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 	}
 
 	now := it.clock.Now().UnixMilli()
-	keys := []string{NewKeyMsgDetail(it.namespace, queueName, msgId), NewKeyQueuePending(it.namespace, queueName)}
-	args := []interface{}{
-		payload,
-		MsgStatePending,
-		msgId,
-		now,
+	var resI interface{}
+	if uniqueInMs == 0 {
+		keys := []string{NewKeyMsgDetail(it.namespace, queueName, msgId), NewKeyQueuePending(it.namespace, queueName)}
+		args := []interface{}{
+			payload,
+			MsgStatePending,
+			now,
+			msgId,
+		}
+		resI, err = scriptEnqueue.Run(ctx, it.cli, keys, args...).Result()
+	} else {
+		keys := []string{
+			NewKeyMsgUnique(it.namespace, queueName, msgId),
+			NewKeyMsgDetail(it.namespace, queueName, msgId),
+			NewKeyQueuePending(it.namespace, queueName),
+		}
+		args := []interface{}{
+			uniqueInMs,
+			payload,
+			MsgStatePending,
+			now,
+			msgId,
+		}
+		resI, err = scriptEnqueueUnique.Run(ctx, it.cli, keys, args...).Result()
 	}
 
-	resI, err := scriptEnqueue.Run(ctx, it.cli, keys, args...).Result()
 	if err != nil {
 		return
 	}
@@ -237,6 +292,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 // KEYS[3] -> gmq:<queueName>:waiting
 // KEYS[4] -> gmq:<queueName>:failed
 // KEYS[5] -> gmq:<queueName>:msg:<msgId>
+// KEYS[6] -> gmq:<queueName>:uniq:<msgId>
 //
 // ARGV[1] -> <msgId>
 var scriptDelete = redis.NewScript(`
@@ -244,6 +300,7 @@ redis.call("LREM", KEYS[1], 0, ARGV[1])
 redis.call("LREM", KEYS[2], 0, ARGV[1])
 redis.call("LREM", KEYS[3], 0, ARGV[1])
 redis.call("LREM", KEYS[4], 0, ARGV[1])
+redis.call("DEL", KEYS[6])
 if redis.call("DEL", KEYS[5]) == 0 then
 	return 1
 else
@@ -258,6 +315,7 @@ func (it *BrokerRedis) Delete(ctx context.Context, queueName, msgId string) (err
 		NewKeyQueueWaiting(it.namespace, queueName),
 		NewKeyQueueFailed(it.namespace, queueName),
 		NewKeyMsgDetail(it.namespace, queueName, msgId),
+		NewKeyMsgUnique(it.namespace, queueName, msgId),
 	}
 
 	argv := []interface{}{
