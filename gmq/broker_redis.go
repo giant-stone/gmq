@@ -103,13 +103,13 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 		queueName = DefaultQueueName
 	}
 
-	nowNano := it.clock.Now().UnixNano()
+	now := it.clock.Now().UnixMilli()
 	keys := []string{NewKeyMsgDetail(it.namespace, queueName, msgId), NewKeyQueuePending(it.namespace, queueName)}
 	args := []interface{}{
 		payload,
 		MsgStatePending,
 		msgId,
-		nowNano,
+		now,
 	}
 
 	resI, err := scriptEnqueue.Run(ctx, it.cli, keys, args...).Result()
@@ -129,7 +129,7 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 	}
 
 	return &Msg{
-		Created: nowNano,
+		Created: now,
 		Id:      msgId,
 		Payload: payload,
 		Queue:   queueName,
@@ -156,7 +156,7 @@ if redis.call("EXISTS", KEYS[2]) == 0 then
 	if id then
 		local key = ARGV[1] .. id
 		redis.call("HSET", key, "state", "processing")
-		redis.call("HSET", key, "processAt", ARGV[2])
+		redis.call("HSET", key, "processedat", ARGV[2])
 		return {id, redis.call("HGETALL", key)}
 	end
 end
@@ -170,7 +170,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	}
 	args := []interface{}{
 		NewKeyMsgDetail(it.namespace, queueName, ""),
-		time.Now().UnixNano(),
+		time.Now().UnixMilli(),
 	}
 
 	resI, err := scriptDequeue.Run(ctx, it.cli, keys, args...).Result()
@@ -219,15 +219,15 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	payload, _ := values["payload"].(string)
 	state, _ := values["state"].(string)
 	created, _ := values["created"].(string)
-	processed, _ := values["processed"].(string)
+	Processedat, _ := values["Processedat"].(string)
 
 	return &Msg{
-		Payload:   []byte(payload),
-		Id:        msgId,
-		Queue:     queueName,
-		State:     state,
-		Created:   gstr.Atoi64(created),
-		Processed: gstr.Atoi64(processed),
+		Payload:     []byte(payload),
+		Id:          msgId,
+		Queue:       queueName,
+		State:       state,
+		Created:     gstr.Atoi64(created),
+		Processedat: gstr.Atoi64(Processedat),
 	}, nil
 }
 
@@ -373,12 +373,12 @@ func (it *BrokerRedis) Get(ctx context.Context, queueName, msgId string) (msg *M
 	}
 
 	return &Msg{
-		Payload:   []byte(payload),
-		Id:        msgId,
-		Queue:     queueName,
-		State:     values["state"],
-		Created:   gstr.Atoi64(values["created"]),
-		Processed: gstr.Atoi64(values["Processed"]),
+		Payload:     []byte(payload),
+		Id:          msgId,
+		Queue:       queueName,
+		State:       values["state"],
+		Created:     gstr.Atoi64(values["created"]),
+		Processedat: gstr.Atoi64(values["Processed"]),
 	}, nil
 }
 
