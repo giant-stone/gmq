@@ -36,6 +36,10 @@ func NewKeyMsgDetail(ns, queueName, msgId string) string {
 	return fmt.Sprintf("%s:%s:msg:%s", ns, queueName, msgId)
 }
 
+func NewKeyMsgUnique(ns, queueName, msgId string) string {
+	return fmt.Sprintf("%s:%s:uniq:%s", ns, queueName, msgId)
+}
+
 func NewKeyQueuePaused(ns, queueName string) string {
 	return fmt.Sprintf("%s:%s:%s", ns, queueName, QueueNamePaused)
 }
