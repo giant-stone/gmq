@@ -5,10 +5,11 @@ import (
 	"flag"
 	"testing"
 
-	"github.com/giant-stone/gmq/gmq"
 	"github.com/giant-stone/go/glogging"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
+
+	"github.com/giant-stone/gmq/gmq"
 )
 
 var (
@@ -21,6 +22,7 @@ func init() {
 	flag.StringVar(&dsnRedis, "dsnRedis", "redis://localhost:6379/14", "redis data source name for testing")
 }
 
+// setup returns a redis broker for testing
 func setup(tb testing.TB) (broker gmq.Broker) {
 	tb.Helper()
 

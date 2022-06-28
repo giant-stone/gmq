@@ -157,7 +157,7 @@ if redis.call("EXISTS", KEYS[2]) == 0 then
 		local key = ARGV[1] .. id
 		redis.call("HSET", key, "state", "processing")
 		redis.call("HSET", key, "processAt", ARGV[2])
-		return {id, redis.call("HGET", key, "payload")}
+		return {id, redis.call("HGETALL", key)}
 	end
 end
 return nil`)
@@ -185,22 +185,49 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 
 	res, ok := resI.([]interface{})
 	if !ok {
-		// TODO: move this message into failed queue
-		err = ErrInternal
-		return
-	}
-	msgId, _ := res[0].(string)
-	payload, _ := res[1].(string)
-	if msgId == "" || payload == "" {
-		// TODO: move this message into failed queue
+		// TODO: move this message into internal damaged queue
 		err = ErrInternal
 		return
 	}
 
+	if len(res) != 2 {
+		// TODO: move this message into internal damaged queue
+		err = ErrInternal
+		return
+	}
+
+	msgId, _ := res[0].(string)
+	arrayOfString, _ := res[1].([]interface{})
+	n := len(arrayOfString)
+	if msgId == "" || n == 0 || n%2 != 0 {
+		// TODO: move this message into internal damaged queue
+		err = ErrInternal
+		return
+	}
+
+	values := map[string]interface{}{}
+	for i := 0; i+2 < n; i += 2 {
+		key, ok := arrayOfString[i].(string)
+		if !ok {
+			err = ErrInternal
+			return
+		}
+		value := arrayOfString[i+1]
+		values[key] = value
+	}
+
+	payload, _ := values["payload"].(string)
+	state, _ := values["state"].(string)
+	created, _ := values["created"].(string)
+	processed, _ := values["processed"].(string)
+
 	return &Msg{
-		Payload: []byte(payload),
-		Id:      msgId,
-		Queue:   queueName,
+		Payload:   []byte(payload),
+		Id:        msgId,
+		Queue:     queueName,
+		State:     state,
+		Created:   gstr.Atoi64(created),
+		Processed: gstr.Atoi64(processed),
 	}, nil
 }
 
@@ -210,7 +237,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 // KEYS[2] -> gmq:<queueName>:processing
 // KEYS[3] -> gmq:<queueName>:waiting
 // KEYS[4] -> gmq:<queueName>:failed
-// KEYS[5] -> gmq:<queueName>:t:<msgId>
+// KEYS[5] -> gmq:<queueName>:msg:<msgId>
 //
 // ARGV[1] -> <msgId>
 var scriptDelete = redis.NewScript(`
@@ -233,11 +260,12 @@ func (it *BrokerRedis) Delete(ctx context.Context, queueName, msgId string) (err
 		NewKeyQueueFailed(it.namespace, queueName),
 		NewKeyMsgDetail(it.namespace, queueName, msgId),
 	}
-	args := []interface{}{
+
+	argv := []interface{}{
 		msgId,
 	}
 
-	resI, err := scriptComplete.Run(ctx, it.cli, keys, args...).Result()
+	resI, err := scriptDelete.Run(ctx, it.cli, keys, argv...).Result()
 	if err != nil {
 		if err == redis.Nil {
 			err = ErrNoMsg
