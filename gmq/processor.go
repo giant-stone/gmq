@@ -71,6 +71,7 @@ func (it *Processor) start() {
 			case <-it.ctx.Done():
 				{
 					it.logger.Debug("Processor done")
+					return
 				}
 			default:
 				it.exec()
