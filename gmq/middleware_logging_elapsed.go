@@ -14,11 +14,11 @@ func LoggingElapsed(h Handler) Handler {
 		err := h.ProcessMsg(ctx, msg)
 		if err != nil {
 			shorten := gstr.ShortenWith(msg.String(), 100, gstr.DefaultShortenSuffix)
-			glogging.Sugared.Warnf("ProcessMsg failed %v %s", time.Since(start), shorten)
+			glogging.Sugared.Warnf("ProcessMsg failed %v %v %s", time.Since(start).Round(time.Millisecond), err, shorten)
 			return err
 		}
 
-		glogging.Sugared.Debugf("ProcessMsg success %v %s", time.Since(start), msg.GetId())
+		glogging.Sugared.Debugf("ProcessMsg success %v %s", time.Since(start).Round(time.Millisecond), msg.GetId())
 		return nil
 	})
 }
