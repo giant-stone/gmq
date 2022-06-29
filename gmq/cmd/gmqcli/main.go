@@ -134,6 +134,10 @@ func getMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
 
 func delMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
 	err := broker.Delete(ctx, queueName, msgId)
-	gutil.ExitOnErr(err)
+	if err != nil {
+		if err != gmq.ErrNoMsg {
+			gutil.ExitOnErr(err)
+		}
+	}
 	fmt.Printf("queue=%s msgId=%s deleted \n", queueName, msgId)
 }
