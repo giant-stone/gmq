@@ -7,14 +7,14 @@ import (
 )
 
 type Msg struct {
-	Payload []byte
-	Id      string
-	Queue   string
+	Payload []byte `json:"payload"`
+	Id      string `json:"id"`
+	Queue   string `json:"queue"`
 
-	State string
+	State string `json:"state"`
 
-	Created     int64
-	Processedat int64
+	Created     int64 `json:"created"`
+	Processedat int64 `json:"processedat"`
 }
 
 func (it *Msg) GetPayload() []byte {

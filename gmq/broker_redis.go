@@ -260,7 +260,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	}
 
 	values := map[string]interface{}{}
-	for i := 0; i+2 < n; i += 2 {
+	for i := 0; i+2 <= n; i += 2 {
 		key, ok := arrayOfString[i].(string)
 		if !ok {
 			err = ErrInternal
@@ -273,7 +273,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	payload, _ := values["payload"].(string)
 	state, _ := values["state"].(string)
 	created, _ := values["created"].(string)
-	Processedat, _ := values["Processedat"].(string)
+	processedat, _ := values["processedat"].(string)
 
 	return &Msg{
 		Payload:     []byte(payload),
@@ -281,7 +281,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 		Queue:       queueName,
 		State:       state,
 		Created:     gstr.Atoi64(created),
-		Processedat: gstr.Atoi64(Processedat),
+		Processedat: gstr.Atoi64(processedat),
 	}, nil
 }
 
