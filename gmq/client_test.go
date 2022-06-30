@@ -22,8 +22,9 @@ func TestClient_Enqueue(t *testing.T) {
 	nowNano := now.UnixNano()
 	msgId := fmt.Sprintf("%d", nowNano)
 	queueName := "q" + msgId
+	payload := []byte(`{"hello":"world"}`)
 	msgWant := &gmq.Msg{
-		Payload: []byte(`{"hello":"world"}`),
+		Payload: payload,
 		Id:      msgId,
 		Queue:   queueName,
 	}
@@ -34,6 +35,7 @@ func TestClient_Enqueue(t *testing.T) {
 	require.Equal(t, msgWant.GetQueue(), msgGot.GetQueue(), "GetQueue")
 	require.Equal(t, msgWant.GetId(), msgGot.GetId(), "GetId")
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload(), "GetPayload")
+	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, gmq.MsgStatePending, msgGot.State, "msg.State")
 	require.Equal(t, now.UnixMilli(), msgGot.Created, "msg.Created")
 	require.Equal(t, int64(0), msgGot.Processedat, "msg.Processedat")
@@ -44,9 +46,42 @@ func TestClient_Enqueue(t *testing.T) {
 	require.Equal(t, msgWant.GetQueue(), msgGot.GetQueue(), "GetQueue")
 	require.Equal(t, msgWant.GetId(), msgGot.GetId(), "GetId")
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload(), "GetPayload")
+	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, gmq.MsgStatePending, msgGot.State, "msg.State")
 	require.Equal(t, now.UnixMilli(), msgGot.Created, "msg.Created")
 	require.Equal(t, int64(0), msgGot.Processedat, "msg.Processedat")
+}
+
+func TestClient_Dequeue(t *testing.T) {
+	broker := setup(t)
+	defer broker.Close()
+
+	cli, err := gmq.NewClientFromBroker(broker)
+	require.NoError(t, err, "gmq.NewClientFromBroker")
+
+	now := time.Now()
+	nowMilli := now.UnixMilli()
+	msgId := fmt.Sprintf("%d", nowMilli)
+	payload := []byte(`{"hello":"world"}`)
+	queueName := "myq"
+	msgWant := &gmq.Msg{
+		Payload: payload,
+		Id:      msgId,
+		Queue:   queueName,
+	}
+
+	_, err = cli.Enqueue(context.Background(), msgWant)
+	require.NoError(t, err, "Enqueue")
+
+	msgGot, err := broker.Dequeue(context.Background(), queueName)
+	require.NoError(t, err, "Dequeue")
+	require.Equal(t, msgWant.GetQueue(), msgGot.GetQueue(), "GetQueue")
+	require.Equal(t, msgWant.GetId(), msgGot.GetId(), "GetId")
+	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload(), "GetPayload")
+	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
+	require.Equal(t, gmq.MsgStateProcessing, msgGot.State, "msg.State")
+	require.Equal(t, nowMilli, msgGot.Created, "msg.Created")
+	require.LessOrEqual(t, nowMilli, msgGot.Processedat, "msg.Processedat")
 }
 
 func TestClient_EnqueueDuplicatedMsg(t *testing.T) {
@@ -96,8 +131,9 @@ func TestClient_EnqueueOptQueueName(t *testing.T) {
 
 	now := time.Now().UnixNano()
 	msgId := fmt.Sprintf("%d", now)
+	payload := []byte(`123`)
 	msgWant := &gmq.Msg{
-		Payload: []byte(`123`),
+		Payload: payload,
 		Id:      msgId,
 	}
 	queueName := "myuniq" + msgId
@@ -107,11 +143,14 @@ func TestClient_EnqueueOptQueueName(t *testing.T) {
 	require.NoError(t, err, "Enqueue")
 	require.Equal(t, queueName, msgGot.GetQueue(), "GetQueue")
 	require.Equal(t, msgWant.GetId(), msgGot.GetId(), "GetId")
+	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload(), "GetPayload")
+	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 
 	// validate message via broker lower API
 	msgGot, err = broker.Get(context.Background(), queueName, msgId)
 	require.NoError(t, err, "broker.Get")
 	require.Equal(t, queueName, msgGot.GetQueue(), "GetQueue")
+	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, msgWant.GetId(), msgGot.GetId(), "GetId")
 }
 
