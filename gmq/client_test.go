@@ -37,7 +37,7 @@ func TestClient_Enqueue(t *testing.T) {
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, gmq.MsgStatePending, msgGot.State, "msg.State")
-	require.Equal(t, now.UnixMilli(), msgGot.Created, "msg.Created")
+	require.Equal(t, now.UnixMilli()/1000, msgGot.Created/1000, "msg.Created")
 	require.Equal(t, int64(0), msgGot.Processedat, "msg.Processedat")
 
 	// validate message via broker lower API
@@ -48,7 +48,7 @@ func TestClient_Enqueue(t *testing.T) {
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, gmq.MsgStatePending, msgGot.State, "msg.State")
-	require.Equal(t, now.UnixMilli(), msgGot.Created, "msg.Created")
+	require.Equal(t, now.UnixMilli()/1000, msgGot.Created/1000, "msg.Created")
 	require.Equal(t, int64(0), msgGot.Processedat, "msg.Processedat")
 }
 
@@ -80,7 +80,7 @@ func TestClient_Dequeue(t *testing.T) {
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, gmq.MsgStateProcessing, msgGot.State, "msg.State")
-	require.Equal(t, nowMilli, msgGot.Created, "msg.Created")
+	require.Equal(t, nowMilli/1000, msgGot.Created/1000, "msg.Created")
 	require.LessOrEqual(t, nowMilli, msgGot.Processedat, "msg.Processedat")
 }
 

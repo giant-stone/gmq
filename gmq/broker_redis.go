@@ -48,6 +48,10 @@ func (it *BrokerRedis) Close() error {
 }
 
 func (it *BrokerRedis) Init(ctx context.Context, queueName string) (err error) {
+	return it.updateQueueList(ctx, queueName)
+}
+
+func (it *BrokerRedis) updateQueueList(ctx context.Context, queueName string) (err error) {
 	_, err = it.cli.SAdd(ctx, NewKeyQueueList(), queueName).Result()
 	return
 }
@@ -139,6 +143,8 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 	if queueName == "" {
 		queueName = DefaultQueueName
 	}
+
+	it.updateQueueList(ctx, queueName)
 
 	now := it.clock.Now().UnixMilli()
 	var resI interface{}
