@@ -123,9 +123,12 @@ func main() {
 
 如果不加队列配置，默认全速消费，每个队列会生成和机器 CPU (`runtime.NumCPU()`)数量一致 workers
 
-    gmq - queue - worker a
-    						- worker b
-    						- ...
+    gmq - queue foo - worker a
+                    - worker b
+                    - ...
+        - queue bar - worker aa
+                    - worker bb
+                    - ...
 
 在某些场合下，我们希望只有一个 worker 并且按一定间隔从队列中消费消息，可以通过队列配置控制：
 
