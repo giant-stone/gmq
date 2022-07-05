@@ -354,7 +354,7 @@ func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, seconds 
 // scriptComplete marks a message consumed successfully.
 //
 // KEYS[1] -> gmq:<queueName>:processing
-// KEYS[2] -> gmq:<queueName>:t:<msgId>
+// KEYS[2] -> gmq:<queueName>:msg:<msgId>
 // KEYS[3] -> gmq:<queueName>:processed:<YYYY-MM-DD>
 //
 // ARGV[1] -> <msgId>
