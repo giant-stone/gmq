@@ -9,6 +9,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// Processor manages queue worker(s) for consuming messages.
 type Processor struct {
 	ctx    context.Context
 	broker Broker
