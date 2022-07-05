@@ -24,3 +24,19 @@ func TestNewServer(t *testing.T) {
 
 	srv.Shutdown()
 }
+
+func TestNewServerErrNoHandlers(t *testing.T) {
+	broker := setup(t)
+	defer broker.Close()
+
+	srv := gmq.NewServer(context.Background(), broker, nil)
+	mux := gmq.NewMux()
+	err := srv.Run(mux)
+	require.EqualErrorf(t, err, "no handler(s)", "want err no handlers")
+	srv.Shutdown()
+
+	srv = gmq.NewServer(context.Background(), broker, nil)
+	err = srv.Run(nil)
+	require.EqualErrorf(t, err, "no handler(s)", "want err no handlers")
+	srv.Shutdown()
+}
