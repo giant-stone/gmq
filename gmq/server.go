@@ -45,8 +45,13 @@ func (it *Server) Run(mux *Mux) (err error) {
 		return fmt.Errorf("no handler(s)")
 	}
 
+	patterns := mux.GetPatterns()
+	if len(patterns) == 0 {
+		return fmt.Errorf("no handler(s)")
+	}
+
 	// pattern name is also queue name
-	for queueName := range mux.GetPatterns() {
+	for queueName := range patterns {
 		queueCfg, ok := it.cfg.QueueCfgs[queueName]
 		params := ProcessorParams{
 			Ctx:       it.ctx,
