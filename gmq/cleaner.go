@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Cleaner auto-delete dead or failed messages, completed messages at intervals.
 type Cleaner struct {
 	ctx        context.Context
 	broker     Broker
