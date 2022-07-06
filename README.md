@@ -1,6 +1,6 @@
 # About
 
-gmq 一个简单消息队列
+gmq 一个带消费间隔控制的简单消息队列。
 
 [![Go](https://github.com/giant-stone/gmq/actions/workflows/go.yml/badge.svg)](https://github.com/giant-stone/gmq/actions/workflows/go.yml)
 [![CodeQL](https://github.com/giant-stone/gmq/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/giant-stone/gmq/actions/workflows/codeql-analysis.yml)
@@ -19,32 +19,16 @@ gmq 一个简单消息队列
 - [x] 中间件
 - [x] 测试覆盖核心逻辑
 
-参考了 [hibiken/asynq](https://github.com/hibiken/asynq) 实现，差异
+功能和接口设计都参考了 [hibiken/asynq](https://github.com/hibiken/asynq) 实现，差异：
 
 - 默认支持自定义消费间隔
   - 所有的消息队列都希望消费节点尽可能快，在某些场景下，我们希望实现自定义间隔消费消息——注意：不是重试，不是预定将来某个准确时刻!
 - 消息自动保证入队某个时间段内唯一，`client.Enqueue(msg, gmq.UniqueIn(time.Hour*12))` 即可——无论消费结果成功还是失败，约束在 UniqueIn 内都有效
   - asynq 需要同时指定生成 TaskId、Unique、Retention 三个参数，但默认消费成功后 Unique 限制自动删除
 
-## Message State
+和其他消息队列差异：
 
-消息状态
-
-    pending 待消费  消息已入队等待空闲 worker (工作协程)消费
-    waiting 等待中  worker 从 pending 消费消息但由于消费间隔限制，等待中
-    processing 处理中  worker 正处理消息中
-    failed 处理失败  消息处理失败
-    archived 已存档  默认处理失败的消息自动存储，并且 3 天后自动删除
-
-消息生命周期状态变化
-
-    enqueue -> pending -> [waiting] -> processing -> success -> archived
-                                                \                ^
-                                                  \             /
-                                                   \           /
-                                                    +-> failed
-
-存储中的消息总数 total = pending + waiting + processing + failed
+- 性能和可靠性不是首要考虑，**易用性、实用性、满足真正多样化场景需求放在第一优先考虑**
 
 ## Quickstart
 
@@ -180,8 +164,4 @@ seckill 队列限制 worker 一个，每 500 毫秒 生产 1 条，消费间隔 
 
 ## Advanced Topics
 
-- 消息去重
-- 中间件
-- cron 类定时任务
-- 信号处理
-- 查看消费统计
+更多功能见 [giant-stone/gmq/wiki](https://github.com/giant-stone/gmq/wiki)
