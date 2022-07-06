@@ -1,6 +1,6 @@
 # About
 
-gmq 一个带消费间隔控制的简单消息队列。
+gmq 一个支持自定义消费速率的简单消息队列。
 
 [![Go](https://github.com/giant-stone/gmq/actions/workflows/go.yml/badge.svg)](https://github.com/giant-stone/gmq/actions/workflows/go.yml)
 [![CodeQL](https://github.com/giant-stone/gmq/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/giant-stone/gmq/actions/workflows/codeql-analysis.yml)
@@ -14,14 +14,14 @@ gmq 一个带消费间隔控制的简单消息队列。
 - [ ] 网页端队列管理工具,自带简易验证
 - [x] 支持类似 cron 定时任务
 - [x] 命令行队列管理工具
-- [x] 自定义消费间隔
+- [x] 自定义消费速率
 - [x] 自定义时限内消息去重
 - [x] 中间件
 - [x] 测试覆盖核心逻辑
 
 功能和接口设计都参考了 [hibiken/asynq](https://github.com/hibiken/asynq) 实现，差异：
 
-- 默认支持自定义消费间隔
+- 默认支持自定义消费速率（自定义从队列取消息的时间间隔）
   - 所有的消息队列都希望消费节点尽可能快，在某些场景下，我们希望实现自定义间隔消费消息——注意：不是重试，不是预定将来某个准确时刻!
 - 消息自动保证入队某个时间段内唯一，`client.Enqueue(msg, gmq.UniqueIn(time.Hour*12))` 即可——无论消费结果成功还是失败，约束在 UniqueIn 内都有效
   - asynq 需要同时指定生成 TaskId、Unique、Retention 三个参数，但默认消费成功后 Unique 限制自动删除
