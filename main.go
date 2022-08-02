@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"math/rand"
 	"time"
 
 	"github.com/giant-stone/gmq/gmq"
@@ -64,12 +65,21 @@ func main() {
 	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
 	mux.Handle(gmq.DefaultQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
 		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
-		return errors.New("this is a failure test for default queue")
+		if rand.Intn(2) == 1 {
+			return errors.New("this is a failure test for default queue")
+		} else {
+			return nil
+		}
+
 	}))
 
 	mux.Handle(slowQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
 		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
-		return errors.New("this is a failure test for slow queue")
+		if rand.Intn(2) == 1 {
+			return errors.New("this is a failure test for slow queue")
+		} else {
+			return nil
+		}
 	}))
 
 	if err := srv.Run(mux); err != nil {

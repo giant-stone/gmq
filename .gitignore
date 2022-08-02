@@ -7,5 +7,9 @@
 *.bak
 *.swp
 .vscode/
-.DS_Store
+
 ignore/
+
+.DS_Store
+
+.TODO

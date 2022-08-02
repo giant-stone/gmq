@@ -32,7 +32,7 @@ var (
 
 func main() {
 	flag.StringVar(&loglevel, "l", "", "loglevel debug,info,warn,error")
-	flag.StringVar(&dsnRedis, "d", "redis://127.0.0.1:6379/3", "redis DSN")
+	flag.StringVar(&dsnRedis, "d", "redis://127.0.0.1:6379/0", "redis DSN")
 
 	flag.BoolVar(&cmdPrintStats, "stats", false, "print queue stats")
 	flag.BoolVar(&cmdAddMsg, "add", false, "append a message into queue")
@@ -48,7 +48,7 @@ func main() {
 	flag.Parse()
 
 	glogging.Init([]string{"stdout"}, loglevel)
-
+	cmdPrintStats = true
 	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdDelMsg && (cmdPauseq != "") && (cmdResumeq != "") {
 		flag.PrintDefaults()
 		os.Exit(1)

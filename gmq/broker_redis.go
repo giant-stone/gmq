@@ -513,7 +513,13 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 		pending, _ := it.cli.LLen(ctx, NewKeyQueuePending(it.namespace, queueName)).Result()
 		waiting, _ := it.cli.LLen(ctx, NewKeyQueueWaiting(it.namespace, queueName)).Result()
 		processing, _ := it.cli.LLen(ctx, NewKeyQueueProcessing(it.namespace, queueName)).Result()
-		failed, _ := it.cli.LLen(ctx, NewKeyQueueFailed(it.namespace, queueName)).Result()
+		var failed int64
+		if exist, _ := it.cli.Exists(ctx, NewKeyQueueFailed(it.namespace, queueName)).Result(); exist == 1 {
+			failed, _ = it.cli.LLen(ctx, NewKeyQueueFailed(it.namespace, queueName)).Result()
+		} else {
+			failed, _ = it.cli.HLen(ctx, NewKeyQueueFailedMsg(it.namespace, queueName, gtime.UnixTime2YyyymmddUtc(it.clock.Now().Unix()))).Result()
+		}
+
 		total := pending + waiting + processing + failed
 
 		rs = append(rs, &QueueStat{

@@ -110,14 +110,14 @@ func (it *Server) Shutdown() {
 func (it *Server) Pause(qname string) error {
 	var err error
 	if _, has := it.queueNames[qname]; !has {
-		it.logger.Debug("Pause failed, invalid queue name")
+		it.logger.Warn("Pause failed, invalid queue name")
 	}
 
 	if err = it.broker.Pause(qname); err != nil {
 		if errors.Is(err, ErrInternal) {
-			it.logger.Debug("warning: the queue is already paused")
+			it.logger.Warn("the queue is already paused")
 		} else {
-			it.logger.Debugf("fatal: error occurs when pause queue: %s, error(%s)", qname, err)
+			it.logger.Errorf("queue: %s op:pause, error(%s)", qname, err)
 		}
 	}
 	return err
@@ -126,14 +126,14 @@ func (it *Server) Pause(qname string) error {
 func (it *Server) Resume(qname string) error {
 	var err error
 	if _, has := it.queueNames[qname]; !has {
-		it.logger.Debug("Resume failed, invalid queue name")
+		it.logger.Warn("Resume failed, invalid queue name")
 	}
 
 	if err = it.broker.Resume(qname); err != nil {
 		if errors.Is(err, ErrInternal) {
-			it.logger.Debug("warning: the queue is not paused")
+			it.logger.Warn("the queue is not paused")
 		} else {
-			it.logger.Debugf("fatal: error occurs when pause queue: %s, error(%s)", qname, err)
+			it.logger.Errorf("queue: %s op:resume, error(%s)", qname, err)
 		}
 	}
 	return err
