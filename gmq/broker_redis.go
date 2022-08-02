@@ -445,6 +445,38 @@ func (it *BrokerRedis) Get(ctx context.Context, queueName, msgId string) (msg *M
 	}, nil
 }
 
+func (it *BrokerRedis) Pause(qname string) error {
+	key := NewKeyQueuePaused(it.namespace, qname)
+	ok, err := it.cli.SetNX(context.Background(), key, it.clock.Now().Unix(), 0).Result()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrInternal
+	}
+
+	return nil
+}
+
+func (it *BrokerRedis) Resume(qname string) error {
+	key := NewKeyQueuePaused(it.namespace, qname)
+	deleted, err := it.cli.Del(context.Background(), key).Result()
+	if err != nil {
+		return err
+	}
+	if deleted == 0 {
+		return ErrInternal
+	}
+
+	return nil
+}
+
+func (it *BrokerRedis) Refresh(qname string) error {
+	it.Pause(qname)
+
+	return nil
+}
+
 type QueueStat struct {
 	Name       string
 	Total      int64 // all state of message store in Redis
@@ -531,7 +563,83 @@ func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *Que
 	return
 }
 
+// scriptFail enqueues a failed message
+// Input:
+// KEYS[1] -> gmq:<queueName>:msg:<msgId>
+// KEYS[2] -> gmq:<queueName>:processing
+// KEYS[3] -> gmq:<queueName>:failed
+// KEYS[4] -> gmq:<queueName>:failed:<YYYY-MM-DD>
+// --
+// ARGV[1] -> <msg expirations in duration in milliseconds>
+// ARGV[2] -> "failed"
+// ARGV[3] -> die at <current unix time in milliseconds>
+// ARGV[4] -> <msgId>
+// ARGV[5] -> cutoff days e.g 7days ago
+// ARGV[6] -> max count for failed queue
+// ARGV[7] -> Info for failure
+
+// Output:
+// Returns 0 if successfully enqueued
+// Returns 1 if task ID did not exists
+var scriptFail = redis.NewScript(`
+if redis.call("EXISTS", KEYS[1]) == 0 then
+	return 1
+end
+redis.call("LREM", KEYS[2], 0, ARGV[4])
+redis.call("ZADD", KEYS[3], ARGV[3], ARGV[4])
+redis.call("ZREMRANGEBYSCORE", KEYS[3], "-inf", ARGV[5])
+redis.call("ZREMRANGEBYRANK", KEYS[3], 0, -ARGV[6])
+redis.call("EXPIRE", KEYS[1], ARGV[1])
+redis.call("HSET", KEYS[1], "state", ARGV[2])
+redis.call("HSET", KEYS[1], "dieat", ARGV[3])
+redis.call("HSET", KEYS[1], "err", ARGV[7])
+redis.call("INCR", KEYS[4])
+redis.call("EXPIRE", KEYS[4], ARGV[1])
+return 0
+`)
+
+// use individual keys to save failed msg info and a limited zset to save failed id
+
 func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err error) {
-	// TBD
-	return
+	msgId := msg.GetId()
+
+	queueName := msg.GetQueue()
+	keys := []string{
+		NewKeyMsgDetail(it.namespace, queueName, msgId),
+		NewKeyQueueProcessing(it.namespace, queueName),
+		NewKeyQueueFailed(it.namespace, queueName),
+		NewKeyDailyStatFailed(it.namespace, queueName, gtime.UnixTime2YyyymmddUtc(it.clock.Now().Unix())),
+	}
+
+	args := []interface{}{
+		int64((time.Hour * 24 * 7).Seconds()),
+		MsgStateFailed,
+		time.Now().UnixMilli(),
+		msgId,
+		it.clock.Now().AddDate(0, 0, -failedMsgExpiredDay).Unix(),
+		maxFailedQueueLength,
+		errFail.Error(),
+	}
+
+	resI, err := scriptFail.Run(ctx, it.cli, keys, args...).Result()
+	if err != nil {
+		if err == redis.Nil {
+			err = ErrNoMsg
+			return err
+		}
+		err = ErrInternal
+		return err
+	}
+
+	rt, ok := resI.(int64)
+	if !ok {
+		err = ErrInternal
+		return err
+	}
+
+	if rt == LuaReturnCodeError {
+		err = ErrNoMsg
+		return err
+	}
+	return errFail
 }

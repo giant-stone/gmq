@@ -1,5 +1,7 @@
 package gmq
 
 const (
-	Namespace = "gmq"
+	Namespace            = "gmq"
+	failedMsgExpiredDay  = 7
+	maxFailedQueueLength = 100
 )

@@ -23,6 +23,9 @@ type Broker interface {
 	Ping(ctx context.Context) error
 	GetStatsByDate(ctx context.Context, YYYYMMDD string) (*QueueDailyStat, error)
 
+	Pause(qname string) error
+	Resume(qname string) error
+	Refresh(qname string) error
 	// SetClock custom internal clock for testing
 	SetClock(c Clock)
 }
