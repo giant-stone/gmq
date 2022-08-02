@@ -25,14 +25,24 @@ func init() {
 func setup(tb testing.TB) (broker gmq.Broker) {
 	tb.Helper()
 
+	cli := getClient(tb)
+
+	broker, err := gmq.NewBrokerFromRedisClient(cli)
+	require.NoError(tb, err, "gmq.NewBrokerFromRedisClient")
+	return broker
+}
+
+func getClient(tb testing.TB) (cli *redis.Client) {
+
 	opts, err := redis.ParseURL(dsnRedis)
 	require.NoError(tb, err, "redis.ParseURL")
 
-	cli := redis.NewClient(opts)
+	cli = redis.NewClient(opts)
 	err = cli.FlushDB(context.Background()).Err()
 	require.NoError(tb, err, "cli.FlushDB")
+	return
+}
 
-	broker, err = gmq.NewBrokerFromRedisClient(cli)
-	require.NoError(tb, err, "gmq.NewBrokerFromRedisClient")
-	return broker
+func msgPattern(qname string) string {
+	return gmq.Namespace + ":" + qname + ":msg:*"
 }

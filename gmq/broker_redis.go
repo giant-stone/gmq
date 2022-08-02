@@ -471,6 +471,7 @@ func (it *BrokerRedis) Resume(qname string) error {
 	return nil
 }
 
+// TBD
 func (it *BrokerRedis) Refresh(qname string) error {
 	it.Pause(qname)
 
