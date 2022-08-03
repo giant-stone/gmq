@@ -1,3 +1,4 @@
+// 不要运行file tests， 多个test并行会导致错误
 package gmq_test
 
 import (
@@ -6,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -112,18 +114,13 @@ func TestFail(t *testing.T) {
 	rdb := getClient(t)
 	gutil.ExitOnErr(err)
 
-	msgNum := 100
+	msgNum := 200
+	wg := sync.WaitGroup{}
+	wg.Add(msgNum)
 	go func() {
 		for i := 0; i < msgNum; i++ {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				{
-					// 如果不指定队列名，gmq 默认使用 gmq.DefaultQueueName
-					cli.Enqueue(ctx, &gmq.Msg{Payload: []byte("hello world:" + strconv.Itoa(i))})
-				}
-			}
+			// 如果不指定队列名，gmq 默认使用 gmq.DefaultQueueName
+			cli.Enqueue(ctx, &gmq.Msg{Payload: []byte("hello world:" + strconv.Itoa(i))})
 		}
 	}()
 
@@ -133,7 +130,10 @@ func TestFail(t *testing.T) {
 	countProcessed := 0
 	mux.Handle(gmq.DefaultQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
 		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
-		if rand.Intn(2) == 1 {
+		// 防止队列为空自旋
+		time.Sleep(10 * time.Millisecond)
+		wg.Done()
+		if rand.Intn(3) <= 2 {
 			countFailed++
 			return errors.New("this is a failure test for default queue")
 		} else {
@@ -146,8 +146,7 @@ func TestFail(t *testing.T) {
 	}
 
 	// 验证是否存在错误队列
-
-	time.Sleep(time.Second * 5) // 等待所有消息处理完毕
+	wg.Wait()
 	require.Equal(t, msgNum, countFailed+countProcessed)
 	date := gtime.UnixTime2YyyymmddUtc(time.Now().Unix())
 	dailyStats, err := broker.GetStatsByDate(ctx, date)
@@ -162,7 +161,12 @@ func TestFail(t *testing.T) {
 	require.Equal(t, countFailed, len(msgs), fmt.Sprintf("there should be %d records in cache, but got %d", countFailed, len(msgs)))
 	require.NoError(t, err, "redis")
 	n, err := rdb.ZCard(ctx, gmq.NewKeyQueueFailed(gmq.Namespace, "default")).Result()
-	require.Equal(t, int64(countFailed), n, "Failed Records Num")
+	// 与gmq.maxFailedQueueLength一致
+	if countFailed >= 100 {
+		require.Equal(t, int64(99), n, "Failed Records Num")
+	} else {
+		require.Equal(t, int64(countFailed), n, "Failed Records Num")
+	}
 	require.NoError(t, err, "redis")
 	for i := range msgs {
 		state, err := rdb.HGet(ctx, msgs[i], "state").Result()
