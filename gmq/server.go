@@ -111,6 +111,7 @@ func (it *Server) Pause(qname string) error {
 	var err error
 	if _, has := it.queueNames[qname]; !has {
 		it.logger.Warn("Pause failed, invalid queue name")
+		return ErrInvalidQueue
 	}
 
 	if err = it.broker.Pause(qname); err != nil {
@@ -127,6 +128,7 @@ func (it *Server) Resume(qname string) error {
 	var err error
 	if _, has := it.queueNames[qname]; !has {
 		it.logger.Warn("Resume failed, invalid queue name")
+		return ErrInvalidQueue
 	}
 
 	if err = it.broker.Resume(qname); err != nil {

@@ -69,3 +69,7 @@ func NewKeyQueueFailedMsg(ns, queueName, YYYYMMDD string) string {
 func NewKeyDailyStatFailed(ns, queueName, YYYYMMDD string) string {
 	return fmt.Sprintf("%s:%s:%s:%s", ns, queueName, QueueNameDailyStatFailed, YYYYMMDD)
 }
+
+func NewQueueKeyPattern(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:*", ns, queueName)
+}

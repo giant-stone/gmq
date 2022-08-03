@@ -31,7 +31,7 @@ func NewCleaner(params CleanerParams) *Cleaner {
 
 func (it *Cleaner) start() {
 	go func() {
-		t := time.NewTicker(TTLDeadMsg)
+		t := time.NewTicker(TTLDeadMsg * time.Second)
 
 		for {
 			select {

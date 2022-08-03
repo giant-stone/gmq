@@ -3,8 +3,11 @@ package gmq
 import "context"
 
 const (
-	TTLMsg     = 60 * 60 * 24 * 15 // 15 days
-	TTLDeadMsg = 60 * 60 * 24 * 3  // 3 days
+	TTLMsg               = 60 * 60 * 24 * 15 // 15 days
+	TTLDeadMsg           = 60 * 60 * 24 * 3  // 3 days
+	ClearTimeInterval    = 60 * 60 * 24 * 3  // 3days
+	FailedMsgExpiredDay  = 7
+	MaxFailedQueueLength = 100
 )
 
 type Broker interface {
@@ -25,7 +28,6 @@ type Broker interface {
 
 	Pause(qname string) error
 	Resume(qname string) error
-	Refresh(qname string) error
 	// SetClock custom internal clock for testing
 	SetClock(c Clock)
 }

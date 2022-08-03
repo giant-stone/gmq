@@ -2,6 +2,7 @@ package gmq
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/giant-stone/go/gstr"
@@ -306,6 +307,7 @@ redis.call("LREM", KEYS[1], 0, ARGV[1])
 redis.call("LREM", KEYS[2], 0, ARGV[1])
 redis.call("LREM", KEYS[3], 0, ARGV[1])
 redis.call("LREM", KEYS[4], 0, ARGV[1])
+redis.call("ZREM", KEYS[4], 0, ARGV[1])
 redis.call("DEL", KEYS[6])
 if redis.call("DEL", KEYS[5]) == 0 then
 	return 1
@@ -351,10 +353,68 @@ func (it *BrokerRedis) Delete(ctx context.Context, queueName, msgId string) (err
 	return
 }
 
+// scriptDelete delete a message.
+//
+// KEYS[1] -> gmq:<queueName>:processing
+// KEYS[2] -> gmq:<queueName>:failed
+// KEYS[3] -> created
+// KEYS[4:5] ->  MsgId:MsgKeyQueue
+// ...
+
+// ARGV[1] -> cutoff
+// ARGV[2] -> Length of KEYS
+
+var scriptCheckAndDelete = redis.NewScript(`
+	for i=4, ARGV[2], 2 do
+	if redis.call("HGET", KEYS[i+1], KEYS[3]) <= ARGV[1] then
+			redis.call("DEL", KEYS[i+1])
+			redis.call("LREM", KEYS[1], 0, KEYS[i])
+			redis.call("LREM", KEYS[2],0, KEYS[i])
+		end
+	end
+	return 0
+`)
+
 // delete entries old than first entry of pending
-func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, seconds int64) (err error) {
-	// TBD
-	return
+func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, seconds int64) error {
+	cutoff := time.Now().Add(-(time.Second) * time.Duration(seconds)).UnixMilli()
+
+	states := []string{
+		NewKeyQueueFailed(it.namespace, queueName),
+		NewKeyQueueProcessing(it.namespace, queueName),
+	}
+	keys := []string{
+		states[0],
+		states[1],
+		"created",
+	}
+
+	for _, state := range states {
+		tmp, err := it.cli.LRange(ctx, state, 0, -1).Result()
+		if err != nil {
+			return nil
+		}
+		for i := range tmp {
+			keys = append(keys, tmp[i], NewKeyMsgDetail(it.namespace, queueName, tmp[i]))
+		}
+	}
+	args := []interface{}{
+		cutoff,
+		len(keys),
+	}
+	resI, err := scriptCheckAndDelete.Run(ctx, it.cli, keys, args).Result()
+	if !(err == nil || errors.Is(err, redis.Nil)) {
+		return ErrInternal
+	}
+	rt, ok := resI.(int64)
+	if !ok {
+		return ErrInternal
+	}
+
+	if rt == LuaReturnCodeError {
+		return ErrNoMsg
+	}
+	return nil
 }
 
 // scriptComplete marks a message consumed successfully.
@@ -471,11 +531,31 @@ func (it *BrokerRedis) Resume(qname string) error {
 	return nil
 }
 
-// TBD
-func (it *BrokerRedis) Refresh(qname string) error {
-	it.Pause(qname)
-
-	return nil
+func (it *BrokerRedis) waitProcessed(ctx context.Context, qname string) error {
+	deadline, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Second))
+	defer cancel()
+	for {
+		select {
+		case <-deadline.Done():
+			{
+				return ErrWaitTimeOut
+			}
+		case <-time.After(time.Second):
+			{
+				// 查看processing中的人物是否完成
+				n, err := it.cli.LLen(deadline, NewKeyQueueProcessing(it.namespace, qname)).Result()
+				if err != nil {
+					return ErrInternal
+				}
+				if n != 0 {
+					continue
+				} else {
+					break
+				}
+			}
+		}
+		return nil
+	}
 }
 
 type QueueStat struct {
@@ -623,8 +703,8 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 		MsgStateFailed,
 		time.Now().UnixMilli(),
 		msgId,
-		it.clock.Now().AddDate(0, 0, -failedMsgExpiredDay).Unix(),
-		maxFailedQueueLength,
+		it.clock.Now().AddDate(0, 0, -FailedMsgExpiredDay).Unix(),
+		MaxFailedQueueLength,
 		errFail.Error(),
 	}
 
