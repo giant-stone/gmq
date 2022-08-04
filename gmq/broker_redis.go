@@ -210,7 +210,6 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 // Output:
 // Returns nil if no processable task is found in the given queue.
 // Returns an encoded TaskMessage.
-//
 var scriptDequeue = redis.NewScript(`
 if redis.call("EXISTS", KEYS[2]) == 0 then
 	local id = redis.call("RPOPLPUSH", KEYS[1], KEYS[3])
@@ -529,33 +528,6 @@ func (it *BrokerRedis) Resume(qname string) error {
 	}
 
 	return nil
-}
-
-func (it *BrokerRedis) waitProcessed(ctx context.Context, qname string) error {
-	deadline, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Second))
-	defer cancel()
-	for {
-		select {
-		case <-deadline.Done():
-			{
-				return ErrWaitTimeOut
-			}
-		case <-time.After(time.Second):
-			{
-				// 查看processing中的人物是否完成
-				n, err := it.cli.LLen(deadline, NewKeyQueueProcessing(it.namespace, qname)).Result()
-				if err != nil {
-					return ErrInternal
-				}
-				if n != 0 {
-					continue
-				} else {
-					break
-				}
-			}
-		}
-		return nil
-	}
 }
 
 type QueueStat struct {
