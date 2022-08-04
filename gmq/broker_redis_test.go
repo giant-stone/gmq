@@ -1,10 +1,10 @@
-// 不要运行file tests， 多个test并行会导致错误
 package gmq_test
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"strconv"
 	"sync"
@@ -22,16 +22,23 @@ import (
 )
 
 func TestPauseAndResume(t *testing.T) {
-	broker := setup(t)
+	broker := getTestBroker(t)
 	defer broker.Close()
 
-	srv := gmq.NewServer(context.Background(), broker, nil)
+	testQueueName := "QueueTestPauseAndResume"
+	srv := gmq.NewServer(context.Background(), broker, &gmq.Config{QueueCfgs: map[string]*gmq.QueueCfg{
+		// 队列名 - 队列配置
+		testQueueName: gmq.NewQueueCfg(
+			gmq.OptQueueWorkerNum(1), // 配置限制队列只有一个 worker
+		),
+	}})
 	mux := gmq.NewMux()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	cli, err := gmq.NewClient(dsnRedis)
 	gutil.ExitOnErr(err)
-
+	payload := []byte(fmt.Sprintf("{\"data\": \"Msg Fromm TestPauseAndResume\"}"))
 	go func() {
 		for {
 			select {
@@ -39,21 +46,28 @@ func TestPauseAndResume(t *testing.T) {
 				return
 			default:
 				{
-					// 如果不指定队列名，gmq 默认使用 gmq.DefaultQueueName
-					cli.Enqueue(ctx, &gmq.Msg{Payload: []byte(`{"data":"hello world"}`)})
-					time.Sleep(time.Millisecond * 200)
+					cli.Enqueue(ctx, &gmq.Msg{Payload: payload, Queue: testQueueName})
+					time.Sleep(time.Millisecond * 10)
 				}
 			}
 		}
 	}()
 
+	time.Sleep(time.Second)
 	// 设置消息消费者，mux 类似于 web 框架中常用的多路复用路由处理，
 	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
-	mux.Handle(gmq.DefaultQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
-		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
-		if rand.Intn(2) == 1 {
-			return errors.New("this is a failure test for default queue")
+	countProcessed := 0
+	countFailed := 0
+	count := 0
+	mux.Handle(testQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
+		count++
+		if count%2 == 0 {
+			countFailed++
+			glogging.Sugared.Debugf("Failed"+strconv.Itoa(countFailed), msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
+			return errors.New("this is a failure test for test queue")
 		} else {
+			countProcessed++
+			glogging.Sugared.Debugf("Processed"+strconv.Itoa(countProcessed), msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
 			return nil
 		}
 
@@ -68,9 +82,14 @@ func TestPauseAndResume(t *testing.T) {
 	require.ErrorIs(t, srv.Resume("queueNotExist"), gmq.ErrInvalidQueue)
 
 	// pause and resume correctly
-	time.Sleep(time.Second)
-	err = srv.Pause("default")
+	time.Sleep(time.Millisecond * 500)
+	err = srv.Pause(testQueueName)
 	require.NoError(t, err, "srv.Pause")
+	log.Printf("Queue %s Paused", testQueueName)
+	// wait for msgs under processing complete
+	time.Sleep(time.Millisecond * 500)
+
+	// records the processed and failed msg numbers
 	date := gtime.UnixTime2YyyymmddUtc(time.Now().Unix())
 	dailyStats, err := broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.Pause")
@@ -78,60 +97,72 @@ func TestPauseAndResume(t *testing.T) {
 	FailedBeforePause := dailyStats.Failed
 
 	// repeated operation for pause
-	time.Sleep(time.Second)
-	err = srv.Pause("default")
+	err = srv.Pause(testQueueName)
 	require.Error(t, err, "srv.Pause")
 
 	// check if there is any msg are processed
+	time.Sleep(time.Millisecond * 1000)
 	dailyStats, err = broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.Resume")
 	ProcessedAfterPause := dailyStats.Processed
 	FailedAfterPause := dailyStats.Failed
 
-	require.Zero(t, ProcessedAfterPause-ProcessedBeforePause, "srv.Pause")
-	require.Zero(t, FailedAfterPause-FailedBeforePause, "srv.Pause")
+	require.Zero(t, ProcessedAfterPause-(ProcessedBeforePause),
+		fmt.Sprintf("srv.Pause ProcessedAfterPause: %d, ProcessedBeforePause: %d", ProcessedAfterPause, ProcessedBeforePause))
+	require.Zero(t, FailedAfterPause-FailedBeforePause,
+		fmt.Sprintf("srv.Pause FailedAfterPause: %d, FailedBeforePause: %d", FailedAfterPause, FailedBeforePause))
 
-	err = srv.Resume("default")
+	err = srv.Resume(testQueueName)
 	require.NoError(t, err, "srv.Resume")
+	log.Printf("Queue %s Resumed", testQueueName)
 	// repeated operation for resume
-	err = srv.Resume("default")
+	err = srv.Resume(testQueueName)
 	require.Error(t, err, "srv.Resume")
 
 	// check if the worker resumes to comsume
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond * 1000)
 	dailyStats, err = broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.Resume")
 	ProcessedAfterResume := dailyStats.Processed
 	FailedAfterResume := dailyStats.Failed
-	require.NotZero(t, ProcessedAfterResume-ProcessedAfterPause, "srv.Resume")
-	require.NotZero(t, FailedAfterResume-FailedAfterPause, "srv.Resume")
+	require.NotZero(t, ProcessedAfterResume-ProcessedAfterPause,
+		fmt.Sprintf("srv.Resume ProcessedAfterResume: %d, ProcessedAfterPause: %d", ProcessedAfterResume, ProcessedAfterPause))
+	require.NotZero(t, FailedAfterResume-FailedAfterPause,
+		fmt.Sprintf("srv.Resume FailedAfterResume: %d, FailedAfterPause: %d", FailedAfterResume, FailedAfterPause))
 
 }
 
 func TestFail(t *testing.T) {
-	broker, rdb := setupWithClient(t)
+	broker := getTestBroker(t)
+	rdb := getTestClient(t)
 	defer broker.Close()
 
-	srv := gmq.NewServer(context.Background(), broker, nil)
+	testQueueName := "QueueTestFail"
+	srv := gmq.NewServer(context.Background(), broker, &gmq.Config{QueueCfgs: map[string]*gmq.QueueCfg{
+		// 队列名 - 队列配置
+		testQueueName: gmq.NewQueueCfg(
+			gmq.OptQueueWorkerNum(2), // 配置限制队列只有一个 worker
+		),
+	}})
 	mux := gmq.NewMux()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	cli, err := gmq.NewClientFromBroker(broker)
 	gutil.ExitOnErr(err)
 
 	msgNum := 200
 	wg := sync.WaitGroup{}
 	wg.Add(msgNum)
+	payload := []byte(fmt.Sprintf("{\"data\": \"Msg Fromm TestFail\"}"))
 	go func() {
 		for i := 0; i < msgNum; i++ {
-			// 如果不指定队列名，gmq 默认使用 gmq.DefaultQueueName
 			select {
 			case <-ctx.Done():
 				return
 			default:
 				{
-					// 如果不指定队列名，gmq 默认使用 gmq.DefaultQueueName
-					cli.Enqueue(ctx, &gmq.Msg{Payload: []byte(`{"data":"hello world"}`)})
+					cli.Enqueue(ctx, &gmq.Msg{Payload: payload, Queue: testQueueName})
 				}
 			}
 		}
@@ -141,7 +172,7 @@ func TestFail(t *testing.T) {
 	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
 	countFailed := 0
 	countProcessed := 0
-	mux.Handle(gmq.DefaultQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
+	mux.Handle(testQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
 		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
 		// 防止队列为空自旋
 		time.Sleep(10 * time.Millisecond)
@@ -172,10 +203,10 @@ func TestFail(t *testing.T) {
 	require.Zero(t, ProcessedAfterPause-int64(countProcessed), "Processed Queue Msg Records")
 	require.Zero(t, FailedAfterPause-int64(countFailed), "Failed Queue Msg Records")
 
-	msgs, err := rdb.Keys(ctx, msgPattern("default")).Result()
+	msgs, err := rdb.Keys(ctx, msgPattern(testQueueName)).Result()
 	require.Equal(t, countFailed, len(msgs), fmt.Sprintf("there should be %d records in cache, but got %d", countFailed, len(msgs)))
 	require.NoError(t, err, "redis")
-	n, err := rdb.ZCard(ctx, gmq.NewKeyQueueFailed(gmq.Namespace, "default")).Result()
+	n, err := rdb.ZCard(ctx, gmq.NewKeyQueueFailed(gmq.Namespace, testQueueName)).Result()
 	// 与gmq.maxFailedQueueLength一致
 	if countFailed >= gmq.MaxFailedQueueLength-1 {
 		require.Equal(t, int64(gmq.MaxFailedQueueLength-1), n, "Failed Records Num")
@@ -191,16 +222,19 @@ func TestFail(t *testing.T) {
 }
 
 func workIntervalFunc() time.Duration {
-	return time.Second * time.Duration(1)
+	return time.Millisecond * 200
 }
 
 func TestDeleteAgo(t *testing.T) {
-	broker, rdb := setupWithClient(t)
+	broker := getTestBroker(t)
+	rdb := getTestClient(t)
 	defer broker.Close()
 	mux := gmq.NewMux()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	slowQueueName := "seckill"
+	testQueueName := "QueueTestDeleteAgo"
 	srv := gmq.NewServer(ctx, broker, &gmq.Config{Logger: glogging.Sugared,
 		QueueCfgs: map[string]*gmq.QueueCfg{
 			// 队列名 - 队列配置
@@ -208,12 +242,15 @@ func TestDeleteAgo(t *testing.T) {
 				gmq.OptQueueWorkerNum(1),                    // 配置限制队列只有一个 worker
 				gmq.OptWorkerWorkInterval(workIntervalFunc), // 配置限制队列消费间隔为每 3 秒从队列取一条消息
 			),
+			testQueueName: gmq.NewQueueCfg(
+				gmq.OptQueueWorkerNum(2), //
+			),
 		},
 	})
 
 	// 设置消息消费者，mux 类似于 web 框架中常用的多路复用路由处理，
 	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
-	mux.Handle(gmq.DefaultQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
+	mux.Handle(testQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
 		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
 		if rand.Intn(2) == 1 {
 			return errors.New("this is a failure test for default queue")
@@ -238,25 +275,26 @@ func TestDeleteAgo(t *testing.T) {
 	cutoff := time.Now().Add(-time.Second * 1000)
 	created := cutoff.UnixMilli()
 	// notcutoff := int64(time.Now().Second()) + 1000
+	payload := fmt.Sprintf("{\"data\": \"Msg Fromm TestFail\"}")
 	for i := 0; i < 10; i++ {
-		msg := &gmq.Msg{Payload: []byte(fmt.Sprintf("Outdated msg" + strconv.Itoa(i))), Id: uuid.NewString(), Queue: "default"}
+		msg := &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
 		addMsgAtProcessing(t, ctx, rdb, msg, []int64{created, created})
-		msg = &gmq.Msg{Payload: []byte(fmt.Sprintf("Outdated msg" + strconv.Itoa(i))), Id: uuid.NewString(), Queue: "seckill"}
+		msg = &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: slowQueueName}
 		addMsgAtProcessing(t, ctx, rdb, msg, []int64{created, created})
 
-		msg = &gmq.Msg{Payload: []byte(fmt.Sprintf("Outdated msg" + strconv.Itoa(i))), Id: uuid.NewString(), Queue: "default"}
+		msg = &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
 		addMsgAtFailed(t, ctx, rdb, msg, []int64{created, created, created})
-		msg = &gmq.Msg{Payload: []byte(fmt.Sprintf("Outdated msg" + strconv.Itoa(i))), Id: uuid.NewString(), Queue: "seckill"}
+		msg = &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: slowQueueName}
 		addMsgAtFailed(t, ctx, rdb, msg, []int64{created, created, created})
 	}
 
 	// 检查队列消息是否成功删除
-	broker.DeleteAgo(ctx, gmq.DefaultQueueName, int64(time.Now().Second()))
-	count, err := rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, gmq.DefaultQueueName)).Result()
+	broker.DeleteAgo(ctx, testQueueName, int64(time.Now().Second()))
+	count, err := rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
 	require.NoError(t, err)
 	require.Equal(t, 0, int(count))
 
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueFailed(gmq.Namespace, gmq.DefaultQueueName)).Result()
+	count, err = rdb.LLen(ctx, gmq.NewKeyQueueFailed(gmq.Namespace, testQueueName)).Result()
 	require.NoError(t, err)
 	require.Equal(t, 0, int(count))
 
@@ -270,27 +308,27 @@ func TestDeleteAgo(t *testing.T) {
 	require.Equal(t, 0, int(count))
 
 	created = time.Now().UnixMilli()
-	msg := &gmq.Msg{Payload: []byte("Available msg"), Id: uuid.NewString(), Queue: "default"}
+	msg := &gmq.Msg{Payload: []byte("Available msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
 	addMsgAtProcessing(t, ctx, rdb, msg, []int64{created, created})
 
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, gmq.DefaultQueueName)).Result()
+	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
 	require.NoError(t, err)
 	require.Equal(t, 1, int(count))
 
-	ret, err := rdb.Keys(ctx, msgPattern(gmq.DefaultQueueName)).Result()
+	ret, err := rdb.Keys(ctx, msgPattern(testQueueName)).Result()
 	require.NoError(t, err)
 	require.Equal(t, 1, len(ret))
 
 	// wait for a while
-	after := 3 * time.Second
+	after := 500 * time.Millisecond
 	time.Sleep(after)
-	broker.DeleteAgo(ctx, gmq.DefaultQueueName, int64(after.Seconds()))
+	broker.DeleteAgo(ctx, testQueueName, int64(after.Seconds()))
 
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, gmq.DefaultQueueName)).Result()
+	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
 	require.NoError(t, err)
 	require.Equal(t, 0, int(count))
 
-	ret, err = rdb.Keys(ctx, msgPattern(gmq.DefaultQueueName)).Result()
+	ret, err = rdb.Keys(ctx, msgPattern(testQueueName)).Result()
 	require.NoError(t, err)
 	require.Equal(t, 0, len(ret))
 }

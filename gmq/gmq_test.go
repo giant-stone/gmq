@@ -3,9 +3,6 @@ package gmq_test
 import (
 	"context"
 	"flag"
-	"fmt"
-	"strconv"
-	"sync"
 	"testing"
 
 	"github.com/giant-stone/gmq/gmq"
@@ -15,17 +12,16 @@ import (
 )
 
 var (
-	dsnRedis    string
-	TestNum     int
-	mux         sync.Mutex
-	dsnNoSelect string
+	dsnRedis        string
+	TestNum         int
+	universalBroker gmq.Broker
+	universalCli    *redis.Client
 )
 
 func init() {
 	TestNum = 1
 	glogging.Init([]string{"stdout"}, "debug")
 	flag.StringVar(&dsnRedis, "dsnRedis", "redis://localhost:6379/14", "redis data source name for testing")
-	flag.StringVar(&dsnNoSelect, "dsnNoSelect", "redis://localhost:6379/", "redis data source name for testing, automatically select database number")
 }
 
 // setup returns a redis broker for testing
@@ -38,28 +34,21 @@ func setup(tb testing.TB) (broker gmq.Broker) {
 	require.NoError(tb, err, "cli.FlushDB")
 	broker, err = gmq.NewBrokerFromRedisClient(cli)
 	require.NoError(tb, err, "gmq.NewBrokerFromRedisClient")
+	universalCli = cli
+	universalBroker = broker
 	return
 }
 
-func setupWithClient(tb testing.TB) (broker gmq.Broker, rdb *redis.Client) {
-	tb.Helper()
-	rdb = getClient(tb)
-	broker, err := gmq.NewBrokerFromRedisClient(rdb)
-	require.NoError(tb, err, "gmq.NewBrokerFromRedisClient")
-	err = rdb.FlushDB(context.Background()).Err()
-	require.NoError(tb, err, "cli.FlushDB")
-	return
+func getTestBroker(t testing.TB) gmq.Broker {
+	setup(t)
+	return universalBroker
 }
 
-func getClient(tb testing.TB) (cli *redis.Client) {
-	mux.Lock()
-	TestNum++
-	mux.Unlock()
-	fmt.Println(TestNum)
-	opts, err := redis.ParseURL(dsnNoSelect + strconv.Itoa(TestNum))
-	require.NoError(tb, err, "redis.ParseURL")
-	cli = redis.NewClient(opts)
-	return
+func getTestClient(t testing.TB) *redis.Client {
+	setup(t)
+	err := universalCli.FlushDB(context.Background()).Err()
+	require.NoError(t, err, "cli.FlushDB")
+	return universalCli
 }
 
 func msgPattern(qname string) string {
