@@ -16,11 +16,14 @@ import (
 )
 
 var (
-	cmdPrintStats bool
-	cmdAddMsg     bool
-	cmdGetMsg     bool
-	cmdDelMsg     bool
+	cmdPrintStats  bool
+	cmdAddMsg      bool
+	cmdGetMsg      bool
+	cmdDelMsg      bool
+	cmdStatsWeekly bool
 
+	cmdPauseq  string
+	cmdResumeq string
 	dsnRedis   string
 	msgId      string
 	payloadStr string
@@ -33,10 +36,13 @@ func main() {
 	flag.StringVar(&loglevel, "l", "", "loglevel debug,info,warn,error")
 	flag.StringVar(&dsnRedis, "d", "redis://127.0.0.1:6379", "redis DSN")
 
+	flag.BoolVar(&cmdStatsWeekly, "week", false, "print queue stats")
 	flag.BoolVar(&cmdPrintStats, "stats", false, "print queue stats")
 	flag.BoolVar(&cmdAddMsg, "add", false, "append a message into queue")
 	flag.BoolVar(&cmdGetMsg, "get", false, "get a message detail")
 	flag.BoolVar(&cmdDelMsg, "del", false, "delete a message from queue")
+	flag.StringVar(&cmdPauseq, "pause", "", "queuename to pause")
+	flag.StringVar(&cmdResumeq, "resume", "", "queuename to resume")
 
 	flag.StringVar(&queueName, "q", gmq.DefaultQueueName, "queue name")
 	flag.StringVar(&payloadStr, "p", "", "message payload in JSON")
@@ -46,7 +52,7 @@ func main() {
 
 	glogging.Init([]string{"stdout"}, loglevel)
 
-	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdDelMsg {
+	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdDelMsg && (cmdPauseq != "") && (cmdResumeq != "") && !cmdStatsWeekly {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
@@ -55,8 +61,17 @@ func main() {
 	gutil.ExitOnErr(err)
 	ctx := context.Background()
 
+	if cmdPauseq != "" {
+		pauseQueue(ctx, broker, cmdPauseq)
+		os.Exit(0)
+	} else if cmdResumeq != "" {
+		resumeQueue(ctx, broker, cmdResumeq)
+		os.Exit(0)
+	}
 	if cmdPrintStats {
 		printStats(ctx, broker)
+	} else if cmdStatsWeekly {
+		printStatsWeekly(ctx, broker)
 	} else if cmdAddMsg {
 		addMsg(ctx, broker, queueName, payloadStr, msgId)
 	} else if cmdGetMsg {
@@ -69,6 +84,21 @@ func main() {
 	}
 
 	fmt.Print("\n")
+}
+
+func pauseQueue(ctx context.Context, broker gmq.Broker, queuename string) {
+	if err := broker.Pause(ctx, queuename); err != nil {
+		fmt.Printf("Pausing queue %s  failed. errer(%s) \n", queuename, err.Error())
+	} else {
+		fmt.Printf("Pause queue %s \n", queuename)
+	}
+}
+func resumeQueue(ctx context.Context, broker gmq.Broker, queuename string) {
+	if err := broker.Resume(ctx, queuename); err != nil {
+		fmt.Printf("Resuming queue %s failed. errer(%s) \n", cmdPauseq, err.Error())
+	} else {
+		fmt.Printf("Resume queue %s \n", queuename)
+	}
 }
 
 func addMsg(ctx context.Context, broker gmq.Broker, queueName, payloadStr, id string) {
@@ -113,6 +143,19 @@ func printStats(ctx context.Context, broker gmq.Broker) {
 		gutil.ExitOnErr(err)
 		fmt.Printf("date=%s(UTC) processed=%d failed=%d \n\n", dailyStats.Date, dailyStats.Processed, dailyStats.Failed)
 	}
+}
+
+func printStatsWeekly(ctx context.Context, broker gmq.Broker) {
+	dayInfo, totalInfo, err := broker.GetStatsWeekly(ctx)
+	gutil.ExitOnErr(err)
+	now := time.Now()
+	fmt.Printf("\n## Consume Statistic: %s ~ %s \n",
+		gtime.UnixTime2YyyymmddUtc(now.AddDate(0, 0, -7).Unix()),
+		gtime.UnixTime2YyyymmddUtc(now.Unix()))
+	for i := range *dayInfo {
+		fmt.Printf("data:%s processed: %d, failed: %d, total: %d \n", (*dayInfo)[i].Date, (*dayInfo)[i].Failed, (*dayInfo)[i].Processed, (*dayInfo)[i].Processed+(*dayInfo)[i].Failed)
+	}
+	fmt.Printf("Total processed: %d, Total failed: %d, total: %d \n", totalInfo.Processed, totalInfo.Failed, totalInfo.Processed+totalInfo.Failed)
 }
 
 func getMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {

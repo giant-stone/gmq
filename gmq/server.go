@@ -2,6 +2,7 @@ package gmq
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/giant-stone/go/glogging"
@@ -104,4 +105,38 @@ func (it *Server) Shutdown() {
 	}
 
 	it.broker.Close()
+}
+
+func (it *Server) Pause(qname string) error {
+	var err error
+	if _, has := it.queueNames[qname]; !has {
+		it.logger.Warn("Pause failed, invalid queue name")
+		return ErrInvalidQueue
+	}
+
+	if err = it.broker.Pause(it.ctx, qname); err != nil {
+		if errors.Is(err, ErrInternal) {
+			it.logger.Warn("the queue is already paused")
+		} else {
+			it.logger.Errorf("queue: %s op:pause, error(%s)", qname, err)
+		}
+	}
+	return err
+}
+
+func (it *Server) Resume(qname string) error {
+	var err error
+	if _, has := it.queueNames[qname]; !has {
+		it.logger.Warn("Resume failed, invalid queue name")
+		return ErrInvalidQueue
+	}
+
+	if err = it.broker.Resume(it.ctx, qname); err != nil {
+		if errors.Is(err, ErrInternal) {
+			it.logger.Warn("the queue is not paused")
+		} else {
+			it.logger.Errorf("queue: %s op:resume, error(%s)", qname, err)
+		}
+	}
+	return err
 }
