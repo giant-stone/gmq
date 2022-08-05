@@ -52,17 +52,17 @@ func NewKeyQueueWaiting(ns, queueName string) string {
 	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateWaiting)
 }
 
+// gmq:<queueName>:failedmsg:<YYYY-MM-DD>
+func NewKeyQueueFailedMsg(ns, queueName, YYYYMMDD string) string {
+	return fmt.Sprintf("%s:%s:%smsg:%s", ns, queueName, QueueNameDailyStatFailed, YYYYMMDD)
+}
+
 func NewKeyQueueFailed(ns, queueName string) string {
 	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateFailed)
 }
 
 func NewKeyDailyStatProcessed(ns, queueName, YYYYMMDD string) string {
 	return fmt.Sprintf("%s:%s:%s:%s", ns, queueName, QueueNameDailyStatProcessed, YYYYMMDD)
-}
-
-// gmq:<queueName>:processed:<YYYY-MM-DD>
-func NewKeyQueueFailedMsg(ns, queueName, YYYYMMDD string) string {
-	return fmt.Sprintf("%s:%s:%smsg:%s", ns, queueName, QueueNameDailyStatFailed, YYYYMMDD)
 }
 
 // gmq:<queueName>:failed:<YYYY-MM-DD>

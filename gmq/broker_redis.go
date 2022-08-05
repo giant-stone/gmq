@@ -633,9 +633,7 @@ func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *Que
 // ARGV[2] -> "failed"
 // ARGV[3] -> die at <current unix time in milliseconds>
 // ARGV[4] -> <msgId>
-// ARGV[5] -> cutoff days e.g 7days ago
-// ARGV[6] -> max count for failed queue
-// ARGV[7] -> Info for failure
+// ARGV[5] -> Info for failure
 
 // Output:
 // Returns 0 if successfully enqueued
@@ -645,15 +643,11 @@ if redis.call("EXISTS", KEYS[1]) == 0 then
 	return 1
 end
 redis.call("LREM", KEYS[2], 0, ARGV[4])
-redis.call("ZADD", KEYS[3], ARGV[3], ARGV[4])
-redis.call("ZREMRANGEBYSCORE", KEYS[3], "-inf", ARGV[5])
-redis.call("ZREMRANGEBYRANK", KEYS[3], 0, -ARGV[6])
-redis.call("EXPIRE", KEYS[1], ARGV[1])
+redis.call("LPUSH", KEYS[3], ARGV[4])
+redis.call("INCR", KEYS[4])
 redis.call("HSET", KEYS[1], "state", ARGV[2])
 redis.call("HSET", KEYS[1], "dieat", ARGV[3])
-redis.call("HSET", KEYS[1], "err", ARGV[7])
-redis.call("INCR", KEYS[4])
-redis.call("EXPIRE", KEYS[4], ARGV[1])
+redis.call("HSET", KEYS[1], "err", ARGV[5])
 return 0
 `)
 
@@ -675,8 +669,6 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 		MsgStateFailed,
 		time.Now().UnixMilli(),
 		msgId,
-		it.clock.Now().AddDate(0, 0, -FailedMsgExpiredDay).Unix(),
-		MaxFailedQueueLength,
 		errFail.Error(),
 	}
 

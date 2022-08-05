@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/giant-stone/gmq/gmq"
 	"github.com/stretchr/testify/require"
+
+	"github.com/giant-stone/gmq/gmq"
 )
 
 func TestSimulatedClock(t *testing.T) {

@@ -5,10 +5,11 @@ import (
 	"flag"
 	"testing"
 
-	"github.com/giant-stone/gmq/gmq"
 	"github.com/giant-stone/go/glogging"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
+
+	"github.com/giant-stone/gmq/gmq"
 )
 
 var (

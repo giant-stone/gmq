@@ -47,13 +47,12 @@ func TestPauseAndResume(t *testing.T) {
 			default:
 				{
 					cli.Enqueue(ctx, &gmq.Msg{Payload: payload, Queue: testQueueName})
-					time.Sleep(time.Millisecond * 10)
+					time.Sleep(time.Millisecond * 100)
 				}
 			}
 		}
 	}()
 
-	time.Sleep(time.Second)
 	// 设置消息消费者，mux 类似于 web 框架中常用的多路复用路由处理，
 	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
 	countProcessed := 0
@@ -77,6 +76,8 @@ func TestPauseAndResume(t *testing.T) {
 		require.NoError(t, err, "srv.Run")
 	}
 
+	// wait for a while
+	time.Sleep(time.Second)
 	// pause and resume invalid queue
 	require.ErrorIs(t, srv.Pause("queueNotExist"), gmq.ErrInvalidQueue)
 	require.ErrorIs(t, srv.Resume("queueNotExist"), gmq.ErrInvalidQueue)
@@ -100,7 +101,7 @@ func TestPauseAndResume(t *testing.T) {
 	err = srv.Pause(testQueueName)
 	require.Error(t, err, "srv.Pause")
 
-	// check if there is any msg are processed
+	// check if there is any msg processed
 	time.Sleep(time.Millisecond * 1000)
 	dailyStats, err = broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.Resume")
@@ -189,14 +190,13 @@ func TestFail(t *testing.T) {
 		require.NoError(t, err, "srv.Run")
 	}
 
-	// 验证是否存在错误队列
 	wg.Wait()
 	// 等待最后的任务完成
 	time.Sleep(time.Second)
 	require.Equal(t, msgNum, countFailed+countProcessed)
 	date := gtime.UnixTime2YyyymmddUtc(time.Now().Unix())
 	dailyStats, err := broker.GetStatsByDate(ctx, date)
-	require.NoError(t, err, "srv.Resume")
+	require.NoError(t, err, "srv.GetStatsByDate")
 	ProcessedAfterPause := dailyStats.Processed
 	FailedAfterPause := dailyStats.Failed
 
@@ -206,13 +206,8 @@ func TestFail(t *testing.T) {
 	msgs, err := rdb.Keys(ctx, msgPattern(testQueueName)).Result()
 	require.Equal(t, countFailed, len(msgs), fmt.Sprintf("there should be %d records in cache, but got %d", countFailed, len(msgs)))
 	require.NoError(t, err, "redis")
-	n, err := rdb.ZCard(ctx, gmq.NewKeyQueueFailed(gmq.Namespace, testQueueName)).Result()
-	// 与gmq.maxFailedQueueLength一致
-	if countFailed >= gmq.MaxFailedQueueLength-1 {
-		require.Equal(t, int64(gmq.MaxFailedQueueLength-1), n, "Failed Records Num")
-	} else {
-		require.Equal(t, int64(countFailed), n, "Failed Records Num")
-	}
+	n, err := rdb.LLen(ctx, gmq.NewKeyQueueFailed(gmq.Namespace, testQueueName)).Result()
+	require.Equal(t, int64(countFailed), n, "Failed Records Num")
 	require.NoError(t, err, "redis")
 	for i := range msgs {
 		state, err := rdb.HGet(ctx, msgs[i], "state").Result()
@@ -369,7 +364,7 @@ func addMsgAtProcessing(t *testing.T, ctx context.Context, cli *redis.Client, ms
 	require.NotEqual(t, gmq.LuaReturnCodeError, rt)
 }
 
-// KEYS[1] -> gmq:<queuename>:processing
+// KEYS[1] -> gmq:<queuename>:failed
 // KEYS[2] -> gmq:<queuename>:msg:<MsgId>
 // ARGV[1] -> state
 // ARGV[2] -> payload

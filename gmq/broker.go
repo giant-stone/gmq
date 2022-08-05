@@ -3,11 +3,9 @@ package gmq
 import "context"
 
 const (
-	TTLMsg               = 60 * 60 * 24 * 15 // 15 days
-	TTLDeadMsg           = 60 * 60 * 24 * 3  // 3 days
-	ClearTimeInterval    = 60 * 60 * 24 * 3  // 3days
-	FailedMsgExpiredDay  = 7
-	MaxFailedQueueLength = 100
+	TTLMsg            = 60 * 60 * 24 * 15 // 15 days
+	TTLDeadMsg        = 60 * 60 * 24 * 3  // 3 days
+	ClearTimeInterval = 60 * 60 * 24 * 3  // 3days
 )
 
 type Broker interface {
