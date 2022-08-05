@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -38,7 +37,7 @@ func TestPauseAndResume(t *testing.T) {
 	defer cancel()
 	cli, err := gmq.NewClient(dsnRedis)
 	gutil.ExitOnErr(err)
-	payload := []byte(fmt.Sprintf("{\"data\": \"Msg Fromm TestPauseAndResume\"}"))
+	payload := []byte("{\"data\": \"Msg Fromm TestPauseAndResume\"}")
 	go func() {
 		for {
 			select {
@@ -53,8 +52,6 @@ func TestPauseAndResume(t *testing.T) {
 		}
 	}()
 
-	// 设置消息消费者，mux 类似于 web 框架中常用的多路复用路由处理，
-	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
 	countProcessed := 0
 	countFailed := 0
 	count := 0
@@ -62,11 +59,9 @@ func TestPauseAndResume(t *testing.T) {
 		count++
 		if count%2 == 0 {
 			countFailed++
-			glogging.Sugared.Debugf("Failed"+strconv.Itoa(countFailed), msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
 			return errors.New("this is a failure test for test queue")
 		} else {
 			countProcessed++
-			glogging.Sugared.Debugf("Processed"+strconv.Itoa(countProcessed), msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
 			return nil
 		}
 
@@ -155,7 +150,7 @@ func TestFail(t *testing.T) {
 	msgNum := 200
 	wg := sync.WaitGroup{}
 	wg.Add(msgNum)
-	payload := []byte(fmt.Sprintf("{\"data\": \"Msg Fromm TestFail\"}"))
+	payload := []byte("{\"data\": \"Msg Fromm TestFail\"}")
 	go func() {
 		for i := 0; i < msgNum; i++ {
 			select {
@@ -237,11 +232,11 @@ func TestDeleteAgo(t *testing.T) {
 		QueueCfgs: map[string]*gmq.QueueCfg{
 			// 队列名 - 队列配置
 			slowQueueName: gmq.NewQueueCfg(
-				gmq.OptQueueWorkerNum(1),                    // 配置限制队列只有一个 worker
-				gmq.OptWorkerWorkInterval(workIntervalFunc), // 配置限制队列消费间隔为每 3 秒从队列取一条消息
+				gmq.OptQueueWorkerNum(1), // 配置限制队列只有一个 worker
+				gmq.OptWorkerWorkInterval(workIntervalFunc),
 			),
 			testQueueName: gmq.NewQueueCfg(
-				gmq.OptQueueWorkerNum(2), //
+				gmq.OptQueueWorkerNum(2),
 			),
 		},
 	})
@@ -273,7 +268,7 @@ func TestDeleteAgo(t *testing.T) {
 	cutoff := now.Add(-time.Second * 1000)
 	created := cutoff.UnixMilli()
 
-	payload := fmt.Sprintf("{\"data\": \"Msg Fromm TestFail\"}")
+	payload := "{\"data\": \"Msg Fromm TestFail\"}"
 	for i := 0; i < 10; i++ {
 		msg := &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
 		addMsgAtProcessing(t, ctx, rdb, msg, []int64{created, created})
@@ -343,7 +338,7 @@ redis.call("HSET", KEYS[2],
            "payload", ARGV[2],
            "state",   ARGV[1],
            "created", ARGV[4],
-		   "processedat", ARGV[5])
+           "processedat", ARGV[5])
 return 0
 `)
 
@@ -381,8 +376,8 @@ redis.call("HSET", KEYS[2],
            "payload", ARGV[2],
            "state",   ARGV[1],
            "created", ARGV[4],
-		   "processedat", ARGV[5],
-		   "dieat", ARGV[6])
+           "processedat", ARGV[5],
+           "dieat", ARGV[6])
 return 0
 `)
 
