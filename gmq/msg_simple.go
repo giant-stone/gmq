@@ -11,10 +11,11 @@ type Msg struct {
 	Id      string `json:"id"`
 	Queue   string `json:"queue"`
 
-	State string `json:"state"`
-
-	Created     int64 `json:"created"`
-	Processedat int64 `json:"processedat"`
+	Created     int64  `json:"created"`
+	Dieat       int64  `json:"dieat"`
+	Err         string `json:"err"`
+	Processedat int64  `json:"processedat"`
+	State       string `json:"state"`
 }
 
 func (it *Msg) GetPayload() []byte {
