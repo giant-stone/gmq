@@ -16,13 +16,14 @@ import (
 )
 
 var (
-	cmdPrintStats bool
-	cmdAddMsg     bool
-	cmdGetMsg     bool
-	cmdDelMsg     bool
-	cmdPauseq     string
-	cmdResumeq    string
+	cmdPrintStats  bool
+	cmdAddMsg      bool
+	cmdGetMsg      bool
+	cmdDelMsg      bool
+	cmdStatsWeekly bool
 
+	cmdPauseq  string
+	cmdResumeq string
 	dsnRedis   string
 	msgId      string
 	payloadStr string
@@ -35,6 +36,7 @@ func main() {
 	flag.StringVar(&loglevel, "l", "", "loglevel debug,info,warn,error")
 	flag.StringVar(&dsnRedis, "d", "redis://127.0.0.1:6379", "redis DSN")
 
+	flag.BoolVar(&cmdStatsWeekly, "week", false, "print queue stats")
 	flag.BoolVar(&cmdPrintStats, "stats", false, "print queue stats")
 	flag.BoolVar(&cmdAddMsg, "add", false, "append a message into queue")
 	flag.BoolVar(&cmdGetMsg, "get", false, "get a message detail")
@@ -50,7 +52,7 @@ func main() {
 
 	glogging.Init([]string{"stdout"}, loglevel)
 
-	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdDelMsg && (cmdPauseq != "") && (cmdResumeq != "") {
+	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdDelMsg && (cmdPauseq != "") && (cmdResumeq != "") && !cmdStatsWeekly {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
@@ -68,6 +70,8 @@ func main() {
 	}
 	if cmdPrintStats {
 		printStats(ctx, broker)
+	} else if cmdStatsWeekly {
+		printStatsWeekly(ctx, broker)
 	} else if cmdAddMsg {
 		addMsg(ctx, broker, queueName, payloadStr, msgId)
 	} else if cmdGetMsg {
@@ -139,6 +143,19 @@ func printStats(ctx context.Context, broker gmq.Broker) {
 		gutil.ExitOnErr(err)
 		fmt.Printf("date=%s(UTC) processed=%d failed=%d \n\n", dailyStats.Date, dailyStats.Processed, dailyStats.Failed)
 	}
+}
+
+func printStatsWeekly(ctx context.Context, broker gmq.Broker) {
+	dayInfo, totalInfo, err := broker.GetStatsWeekly(ctx)
+	gutil.ExitOnErr(err)
+	now := time.Now()
+	fmt.Printf("\n## Consume Statistic: %s ~ %s \n",
+		gtime.UnixTime2YyyymmddUtc(now.AddDate(0, 0, -7).Unix()),
+		gtime.UnixTime2YyyymmddUtc(now.Unix()))
+	for i := range *dayInfo {
+		fmt.Printf("data:%s processed: %d, failed: %d, total: %d \n", (*dayInfo)[i].Date, (*dayInfo)[i].Failed, (*dayInfo)[i].Processed, (*dayInfo)[i].Processed+(*dayInfo)[i].Failed)
+	}
+	fmt.Printf("Total processed: %d, Total failed: %d, total: %d \n", totalInfo.Processed, totalInfo.Failed, totalInfo.Processed+totalInfo.Failed)
 }
 
 func getMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
