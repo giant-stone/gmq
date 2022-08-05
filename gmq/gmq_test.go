@@ -20,7 +20,12 @@ var (
 
 func init() {
 	glogging.Init([]string{"stdout"}, "debug")
-	flag.StringVar(&dsnRedis, "dsnRedis", "redis://localhost:6379/14", "redis data source name for testing")
+	flag.StringVar(
+		&dsnRedis,
+		"dsnRedis",
+		"redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1",
+		"redis data source name for testing",
+	)
 }
 
 // setup returns a redis broker for testing
