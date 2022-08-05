@@ -48,9 +48,10 @@ import (
 	"flag"
 	"time"
 
-	"github.com/giant-stone/gmq/gmq"
 	"github.com/giant-stone/go/glogging"
 	"github.com/giant-stone/go/gutil"
+
+	"github.com/giant-stone/gmq/gmq"
 )
 
 func main() {
