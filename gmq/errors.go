@@ -10,4 +10,8 @@ var (
 	ErrInternal = errors.New("internal error")
 
 	ErrMsgIdConflict = errors.New("msg id conflict")
+
+	ErrWaitTimeOut = errors.New("operation times out")
+
+	ErrInvalidQueue = errors.New("invalid queue name")
 )
