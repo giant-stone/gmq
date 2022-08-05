@@ -26,6 +26,8 @@ type Broker interface {
 
 	Pause(qname string) error
 	Resume(qname string) error
+	Monitor(ctx context.Context, period int) (*MonitorInfo, error)
+
 	// SetClock custom internal clock for testing
 	SetClock(c Clock)
 }

@@ -28,6 +28,10 @@ func NewKeyQueueList() string {
 	return fmt.Sprintf("%s:%s", DefaultInternalName, QueueNameList)
 }
 
+func NewKeyBrokerQueueList(ns string) string {
+	return fmt.Sprintf("%s:%s", ns, QueueNameList)
+}
+
 func NewKeyQueuePending(ns, queueName string) string {
 	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStatePending)
 }
@@ -72,4 +76,8 @@ func NewKeyDailyStatFailed(ns, queueName, YYYYMMDD string) string {
 
 func NewQueueKeyPattern(ns, queueName string) string {
 	return fmt.Sprintf("%s:%s:*", ns, queueName)
+}
+
+func NewQueueKeyMonitor(ns string, YYYYMMDD string, period int) string {
+	return fmt.Sprintf("%s:monitor:%ddays:%s", ns, period, YYYYMMDD)
 }

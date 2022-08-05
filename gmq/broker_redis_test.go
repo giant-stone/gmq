@@ -222,6 +222,9 @@ func workIntervalFunc() time.Duration {
 
 func TestDeleteAgo(t *testing.T) {
 	broker := getTestBroker(t)
+	// 设置仿真时钟
+	now := time.Now()
+	broker.SetClock(gmq.NewSimulatedClock(now))
 	rdb := getTestClient(t)
 	defer broker.Close()
 	mux := gmq.NewMux()
@@ -267,9 +270,9 @@ func TestDeleteAgo(t *testing.T) {
 	if err := srv.Run(mux); err != nil {
 		require.NoError(t, err, "srv.Run")
 	}
-	cutoff := time.Now().Add(-time.Second * 1000)
+	cutoff := now.Add(-time.Second * 1000)
 	created := cutoff.UnixMilli()
-	// notcutoff := int64(time.Now().Second()) + 1000
+
 	payload := fmt.Sprintf("{\"data\": \"Msg Fromm TestFail\"}")
 	for i := 0; i < 10; i++ {
 		msg := &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
@@ -302,7 +305,7 @@ func TestDeleteAgo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, int(count))
 
-	created = time.Now().UnixMilli()
+	created = now.UnixMilli()
 	msg := &gmq.Msg{Payload: []byte("Available msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
 	addMsgAtProcessing(t, ctx, rdb, msg, []int64{created, created})
 
@@ -315,9 +318,8 @@ func TestDeleteAgo(t *testing.T) {
 	require.Equal(t, 1, len(ret))
 
 	// wait for a while
-	after := 500 * time.Millisecond
-	time.Sleep(after)
-	broker.DeleteAgo(ctx, testQueueName, int64(after.Seconds()))
+	broker.SetClock(gmq.NewSimulatedClock(time.Now().Add(time.Second)))
+	broker.DeleteAgo(ctx, testQueueName, int64(time.Second))
 
 	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
 	require.NoError(t, err)

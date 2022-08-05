@@ -376,7 +376,7 @@ var scriptCheckAndDelete = redis.NewScript(`
 
 // delete entries old than first entry of pending
 func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, seconds int64) error {
-	cutoff := time.Now().Add(-(time.Second) * time.Duration(seconds)).UnixMilli()
+	cutoff := it.clock.Now().Add(-(time.Second) * time.Duration(seconds)).UnixMilli()
 
 	states := []string{
 		NewKeyQueueFailed(it.namespace, queueName),
@@ -667,7 +667,7 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 	args := []interface{}{
 		int64((time.Hour * 24 * 7).Seconds()),
 		MsgStateFailed,
-		time.Now().UnixMilli(),
+		it.clock.Now().UnixMilli(),
 		msgId,
 		errFail.Error(),
 	}
@@ -693,4 +693,56 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 		return err
 	}
 	return errFail
+}
+
+// KEYS[1] -> gmq:monitor:<period>days:<YYYYMMDD>
+// ARGV[1] -> processed msg in passed <period> days
+// ARGV[2] -> failed msg in passed <period> days
+// ARGV[3] -> expiration in days
+var scriptMonitor = redis.NewScript(`
+	redis.call("HSET", KEYS[1], "processed", ARGV[1])
+	redis.call("HSET", KEYS[1], "failed", ARGV[2])
+	redis.call("EXPIRE", KEYS[1], ARGV[3])
+	return 0
+`)
+
+type MonitorInfo struct {
+	Period         int
+	TotalFailed    int
+	TotalProcessed int
+	Total          int
+}
+
+func (broker *BrokerRedis) Monitor(ctx context.Context, period int) (*MonitorInfo, error) {
+	now := broker.clock.Now().AddDate(0, 0, -period)
+
+	failedInDays, processdInDays := make([]int64, period+1), make([]int64, period+1)
+	var totalFailed, totalProcessed int64 = 0, 0
+	for i := 0; i < period; i++ {
+		date := gtime.UnixTime2YyyymmddUtc(now.Unix())
+		dailyStats, err := broker.GetStatsByDate(ctx, date)
+		if err != nil {
+			return nil, ErrInternal
+		}
+		failedInDays[i] = dailyStats.Failed
+		processdInDays[i] = dailyStats.Processed
+		totalFailed += dailyStats.Failed
+		totalProcessed += dailyStats.Processed
+		now = now.AddDate(0, 0, 1)
+	}
+
+	keys := []string{NewQueueKeyMonitor(broker.namespace, gtime.UnixTime2YyyymmddUtc(now.Unix()), period)}
+	args := []interface{}{
+		totalProcessed,
+		totalFailed,
+		TTLMsg,
+	}
+	_, err := scriptMonitor.Run(ctx, broker.cli, keys, args).Result()
+	info := &MonitorInfo{
+		Period:         period,
+		TotalFailed:    int(totalFailed),
+		TotalProcessed: int(totalProcessed),
+		Total:          int(totalFailed) + int(totalProcessed),
+	}
+	return info, err
 }

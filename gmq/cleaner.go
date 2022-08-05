@@ -41,9 +41,10 @@ func (it *Cleaner) start() {
 					return
 				}
 			case <-t.C:
-				{
+				{ //TBD 是否要对超过一定时间的统计数据进行清理？
 					for queueName := range it.queueNames {
-						it.broker.DeleteAgo(it.ctx, queueName, TTLMsg)
+						err := it.broker.DeleteAgo(it.ctx, queueName, TTLMsg)
+						it.logger.Errorf("queue: %s os:server.Clean error(%)", queueName, err)
 					}
 				}
 			}
