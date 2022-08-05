@@ -173,14 +173,14 @@ func TestClient_EnqueueOptUniqueIn(t *testing.T) {
 		Id:      msgId,
 	}
 
-	uniqIn := time.Millisecond * time.Duration(200)
+	uniqIn := time.Second * time.Duration(1)
 
 	msgGot, err := cli.Enqueue(context.Background(), msgWant, gmq.OptUniqueIn(uniqIn))
 	require.NoError(t, err, "Enqueue")
 	require.Equal(t, msgWant.GetId(), msgGot.GetId(), "GetId")
 
 	times := 0
-	maxTimes := 100
+	maxTimes := 10
 	for times < maxTimes {
 		_, err = cli.Enqueue(context.Background(), msgWant, gmq.OptUniqueIn(uniqIn))
 		require.ErrorIs(t, err, gmq.ErrMsgIdConflict, "Enqueue with OptUniqueIn")
