@@ -20,6 +20,8 @@ var (
 	cmdAddMsg     bool
 	cmdGetMsg     bool
 	cmdDelMsg     bool
+	cmdPauseq     string
+	cmdResumeq    string
 
 	dsnRedis   string
 	msgId      string
@@ -37,6 +39,8 @@ func main() {
 	flag.BoolVar(&cmdAddMsg, "add", false, "append a message into queue")
 	flag.BoolVar(&cmdGetMsg, "get", false, "get a message detail")
 	flag.BoolVar(&cmdDelMsg, "del", false, "delete a message from queue")
+	flag.StringVar(&cmdPauseq, "pause", "", "queuename to pause")
+	flag.StringVar(&cmdResumeq, "resume", "", "queuename to resume")
 
 	flag.StringVar(&queueName, "q", gmq.DefaultQueueName, "queue name")
 	flag.StringVar(&payloadStr, "p", "", "message payload in JSON")
@@ -46,7 +50,7 @@ func main() {
 
 	glogging.Init([]string{"stdout"}, loglevel)
 
-	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdDelMsg {
+	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdDelMsg && (cmdPauseq != "") && (cmdResumeq != "") {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
@@ -55,6 +59,13 @@ func main() {
 	gutil.ExitOnErr(err)
 	ctx := context.Background()
 
+	if cmdPauseq != "" {
+		pauseQueue(ctx, broker, cmdPauseq)
+		os.Exit(0)
+	} else if cmdResumeq != "" {
+		resumeQueue(ctx, broker, cmdResumeq)
+		os.Exit(0)
+	}
 	if cmdPrintStats {
 		printStats(ctx, broker)
 	} else if cmdAddMsg {
@@ -69,6 +80,21 @@ func main() {
 	}
 
 	fmt.Print("\n")
+}
+
+func pauseQueue(ctx context.Context, broker gmq.Broker, queuename string) {
+	if err := broker.Pause(ctx, queuename); err != nil {
+		fmt.Printf("Pausing queue %s  failed. errer(%s) \n", queuename, err.Error())
+	} else {
+		fmt.Printf("Pause queue %s \n", queuename)
+	}
+}
+func resumeQueue(ctx context.Context, broker gmq.Broker, queuename string) {
+	if err := broker.Resume(ctx, queuename); err != nil {
+		fmt.Printf("Resuming queue %s failed. errer(%s) \n", cmdPauseq, err.Error())
+	} else {
+		fmt.Printf("Resume queue %s \n", queuename)
+	}
 }
 
 func addMsg(ctx context.Context, broker gmq.Broker, queueName, payloadStr, id string) {

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +18,118 @@ import (
 
 	"github.com/giant-stone/gmq/gmq"
 )
+
+func TestPauseAndResume(t *testing.T) {
+	broker := getTestBroker(t)
+	defer broker.Close()
+
+	testQueueName := "QueueTestPauseAndResume"
+	srv := gmq.NewServer(context.Background(), broker, &gmq.Config{QueueCfgs: map[string]*gmq.QueueCfg{
+		// 队列名 - 队列配置
+		testQueueName: gmq.NewQueueCfg(
+			gmq.OptQueueWorkerNum(1), // 配置限制队列只有一个 worker
+		),
+	}})
+	mux := gmq.NewMux()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cli, err := gmq.NewClient(dsnRedis)
+	gutil.ExitOnErr(err)
+	payload := []byte(fmt.Sprintf("{\"data\": \"Msg Fromm TestPauseAndResume\"}"))
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				{
+					cli.Enqueue(ctx, &gmq.Msg{Payload: payload, Queue: testQueueName})
+					time.Sleep(time.Millisecond * 100)
+				}
+			}
+		}
+	}()
+
+	// 设置消息消费者，mux 类似于 web 框架中常用的多路复用路由处理，
+	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
+	countProcessed := 0
+	countFailed := 0
+	count := 0
+	mux.Handle(testQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
+		count++
+		if count%2 == 0 {
+			countFailed++
+			glogging.Sugared.Debugf("Failed"+strconv.Itoa(countFailed), msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
+			return errors.New("this is a failure test for test queue")
+		} else {
+			countProcessed++
+			glogging.Sugared.Debugf("Processed"+strconv.Itoa(countProcessed), msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
+			return nil
+		}
+
+	}))
+
+	if err := srv.Run(mux); err != nil {
+		require.NoError(t, err, "srv.Run")
+	}
+
+	// wait for a while
+	time.Sleep(time.Second)
+	// pause and resume invalid queue
+	require.ErrorIs(t, srv.Pause("queueNotExist"), gmq.ErrInvalidQueue)
+	require.ErrorIs(t, srv.Resume("queueNotExist"), gmq.ErrInvalidQueue)
+
+	// pause and resume correctly
+	time.Sleep(time.Millisecond * 500)
+	err = srv.Pause(testQueueName)
+	require.NoError(t, err, "srv.Pause")
+	log.Printf("Queue %s Paused", testQueueName)
+	// wait for msgs under processing complete
+	time.Sleep(time.Millisecond * 500)
+
+	// records the processed and failed msg numbers
+	date := gtime.UnixTime2YyyymmddUtc(time.Now().Unix())
+	dailyStats, err := broker.GetStatsByDate(ctx, date)
+	require.NoError(t, err, "srv.Pause")
+	ProcessedBeforePause := dailyStats.Processed
+	FailedBeforePause := dailyStats.Failed
+
+	// repeated operation for pause
+	err = srv.Pause(testQueueName)
+	require.Error(t, err, "srv.Pause")
+
+	// check if there is any msg processed
+	time.Sleep(time.Millisecond * 1000)
+	dailyStats, err = broker.GetStatsByDate(ctx, date)
+	require.NoError(t, err, "srv.Resume")
+	ProcessedAfterPause := dailyStats.Processed
+	FailedAfterPause := dailyStats.Failed
+
+	require.Zero(t, ProcessedAfterPause-(ProcessedBeforePause),
+		fmt.Sprintf("srv.Pause ProcessedAfterPause: %d, ProcessedBeforePause: %d", ProcessedAfterPause, ProcessedBeforePause))
+	require.Zero(t, FailedAfterPause-FailedBeforePause,
+		fmt.Sprintf("srv.Pause FailedAfterPause: %d, FailedBeforePause: %d", FailedAfterPause, FailedBeforePause))
+
+	err = srv.Resume(testQueueName)
+	require.NoError(t, err, "srv.Resume")
+	log.Printf("Queue %s Resumed", testQueueName)
+	// repeated operation for resume
+	err = srv.Resume(testQueueName)
+	require.Error(t, err, "srv.Resume")
+
+	// check if the worker resumes to comsume
+	time.Sleep(time.Millisecond * 1000)
+	dailyStats, err = broker.GetStatsByDate(ctx, date)
+	require.NoError(t, err, "srv.Resume")
+	ProcessedAfterResume := dailyStats.Processed
+	FailedAfterResume := dailyStats.Failed
+	require.NotZero(t, ProcessedAfterResume-ProcessedAfterPause,
+		fmt.Sprintf("srv.Resume ProcessedAfterResume: %d, ProcessedAfterPause: %d", ProcessedAfterResume, ProcessedAfterPause))
+	require.NotZero(t, FailedAfterResume-FailedAfterPause,
+		fmt.Sprintf("srv.Resume FailedAfterResume: %d, FailedAfterPause: %d", FailedAfterResume, FailedAfterPause))
+
+}
 
 func TestFail(t *testing.T) {
 	broker := getTestBroker(t)

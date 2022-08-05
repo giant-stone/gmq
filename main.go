@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"math/rand"
 	"strconv"
 	"time"
 
@@ -56,7 +58,7 @@ func main() {
 					// 如果不指定队列名，gmq 默认使用 gmq.DefaultQueueName
 					cli.Enqueue(ctx, &gmq.Msg{Payload: []byte(`{"data":"hello world"}` + strconv.Itoa(count))})
 					count++
-					// cli.Enqueue(ctx, &gmq.Msg{Payload: []byte(`{"fulluri":"worldgold.xxoo/123"}`)}, gmq.OptQueueName(slowQueueName))
+					cli.Enqueue(ctx, &gmq.Msg{Payload: []byte(`{"fulluri":"worldgold.xxoo/123"}`)}, gmq.OptQueueName(slowQueueName))
 					time.Sleep(time.Millisecond * 200)
 				}
 			}
@@ -70,14 +72,14 @@ func main() {
 		return nil
 	}))
 
-	// mux.Handle(slowQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
-	// 	glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
-	// 	if rand.Intn(2) == 1 {
-	// 		return errors.New("this is a failure test for slow queue")
-	// 	} else {
-	// 		return nil
-	// 	}
-	// }))
+	mux.Handle(slowQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
+		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
+		if rand.Intn(2) == 1 {
+			return errors.New("this is a failure test for slow queue")
+		} else {
+			return nil
+		}
+	}))
 
 	if err := srv.Run(mux); err != nil {
 		glogging.Sugared.Fatal("srv.Run ", err)

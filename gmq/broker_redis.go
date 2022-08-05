@@ -376,6 +376,32 @@ redis.call("INCR", KEYS[3])
 return 0
 `)
 
+func (it *BrokerRedis) Pause(ctx context.Context, qname string) error {
+	key := NewKeyQueuePaused(it.namespace, qname)
+	ok, err := it.cli.SetNX(ctx, key, it.clock.Now().Unix(), 0).Result()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrInternal
+	}
+
+	return nil
+}
+
+func (it *BrokerRedis) Resume(ctx context.Context, qname string) error {
+	key := NewKeyQueuePaused(it.namespace, qname)
+	deleted, err := it.cli.Del(ctx, key).Result()
+	if err != nil {
+		return err
+	}
+	if deleted == 0 {
+		return ErrInternal
+	}
+
+	return nil
+}
+
 func (it *BrokerRedis) Complete(ctx context.Context, msg IMsg) (err error) {
 	queueName := msg.GetQueue()
 	msgId := msg.GetId()
