@@ -36,7 +36,6 @@ func main() {
 	flag.StringVar(&loglevel, "l", "", "loglevel debug,info,warn,error")
 	flag.StringVar(&dsnRedis, "d", "redis://127.0.0.1:6379", "redis DSN")
 
-	flag.BoolVar(&cmdStatsWeekly, "week", false, "print queue stats")
 	flag.BoolVar(&cmdPrintStats, "stats", false, "print queue stats")
 	flag.BoolVar(&cmdAddMsg, "add", false, "append a message into queue")
 	flag.BoolVar(&cmdGetMsg, "get", false, "get a message detail")
@@ -127,7 +126,7 @@ func printStats(ctx context.Context, broker gmq.Broker) {
 		fmt.Println("Related info not found. Do consumer(s) have not start yet?")
 	} else {
 		for _, rsStat := range queues {
-			fmt.Printf("queue=%s total=%d pending=%d waiting=%d processing=%d failed=%d \n\n",
+			fmt.Printf("queue=%s total=%d pending=%d waiting=%d processing=%d failed=%d \n",
 				rsStat.Name,
 				rsStat.Total,
 				rsStat.Pending,
@@ -136,12 +135,7 @@ func printStats(ctx context.Context, broker gmq.Broker) {
 				rsStat.Failed,
 			)
 		}
-
-		fmt.Print("## daily stats \n\n")
-		date := gtime.UnixTime2YyyymmddUtc(time.Now().Unix())
-		dailyStats, err := broker.GetStatsByDate(ctx, date)
-		gutil.ExitOnErr(err)
-		fmt.Printf("date=%s(UTC) processed=%d failed=%d \n\n", dailyStats.Date, dailyStats.Processed, dailyStats.Failed)
+		printStatsWeekly(ctx, broker)
 	}
 }
 
@@ -149,7 +143,7 @@ func printStatsWeekly(ctx context.Context, broker gmq.Broker) {
 	dayInfo, totalInfo, err := broker.GetStatsWeekly(ctx)
 	gutil.ExitOnErr(err)
 	now := time.Now()
-	fmt.Printf("\n## Consume Statistic: %s ~ %s \n",
+	fmt.Printf("\n## Weekly Statistic: %s ~ %s \n\n",
 		gtime.UnixTime2YyyymmddUtc(now.AddDate(0, 0, -7).Unix()),
 		gtime.UnixTime2YyyymmddUtc(now.Unix()))
 	for i := range *dayInfo {
