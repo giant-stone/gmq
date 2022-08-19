@@ -41,8 +41,8 @@ func TestClient_Enqueue(t *testing.T) {
 	require.Equal(t, int64(0), msgGot.Processedat, "msg.Processedat")
 
 	// validate message via broker lower API
-	msgGot, err = broker.Get(context.Background(), queueName, msgId)
-	require.NoError(t, err, "broker.Get")
+	msgGot, err = broker.GetMsg(context.Background(), queueName, msgId)
+	require.NoError(t, err, "broker.GetMsg")
 	require.Equal(t, msgWant.GetQueue(), msgGot.GetQueue(), "GetQueue")
 	require.Equal(t, msgWant.GetId(), msgGot.GetId(), "GetId")
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload(), "GetPayload")
@@ -147,8 +147,8 @@ func TestClient_EnqueueOptQueueName(t *testing.T) {
 	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 
 	// validate message via broker lower API
-	msgGot, err = broker.Get(context.Background(), queueName, msgId)
-	require.NoError(t, err, "broker.Get")
+	msgGot, err = broker.GetMsg(context.Background(), queueName, msgId)
+	require.NoError(t, err, "broker.GetMsg")
 	require.Equal(t, queueName, msgGot.GetQueue(), "GetQueue")
 	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, msgWant.GetId(), msgGot.GetId(), "GetId")

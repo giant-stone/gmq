@@ -65,3 +65,7 @@ func NewKeyDailyStatProcessed(ns, queueName, YYYYMMDD string) string {
 func NewKeyDailyStatFailed(ns, queueName, YYYYMMDD string) string {
 	return fmt.Sprintf("%s:%s:%s:%s", ns, queueName, QueueNameDailyStatFailed, YYYYMMDD)
 }
+
+func NewKeyQueueState(ns, queueName string, state string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, state)
+}

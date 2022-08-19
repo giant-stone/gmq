@@ -502,7 +502,7 @@ func (it *BrokerRedis) SetClock(c Clock) {
 	it.clock = c
 }
 
-func (it *BrokerRedis) Get(ctx context.Context, queueName, msgId string) (msg *Msg, err error) {
+func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg *Msg, err error) {
 	values, err := it.cli.HGetAll(ctx, NewKeyMsgDetail(it.namespace, queueName, msgId)).Result()
 	if err != nil {
 		return
@@ -527,6 +527,23 @@ func (it *BrokerRedis) Get(ctx context.Context, queueName, msgId string) (msg *M
 		Created:     gstr.Atoi64(values["created"]),
 		Processedat: gstr.Atoi64(values["Processed"]),
 	}, nil
+}
+
+func (it *BrokerRedis) ListMsg(ctx context.Context, queueName, state string, offset, limit int64) (values []string, err error) {
+	if limit <= 0 {
+		limit = -1
+	}
+	values, err = it.cli.LRange(ctx, NewKeyQueueState(it.namespace, queueName, state), offset, limit).Result()
+	if err != nil {
+		return
+	}
+
+	if len(values) == 0 {
+		err = ErrNoMsg
+		return
+	}
+
+	return
 }
 
 type QueueStat struct {
