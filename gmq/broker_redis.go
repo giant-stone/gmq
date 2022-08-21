@@ -2,9 +2,9 @@ package gmq
 
 import (
 	"context"
-	"errors"
 	"time"
 
+	"github.com/giant-stone/go/glogging"
 	"github.com/giant-stone/go/gstr"
 	"github.com/giant-stone/go/gtime"
 	"github.com/go-redis/redis/v8"
@@ -421,27 +421,30 @@ func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, seconds 
 	for _, state := range states {
 		tmp, err := it.cli.LRange(ctx, state, 0, -1).Result()
 		if err != nil {
-			return nil
+			return ErrInternal
 		}
+
 		for i := range tmp {
 			keys = append(keys, tmp[i], NewKeyMsgDetail(it.namespace, queueName, tmp[i]))
 		}
 	}
+
+	if len(keys) == 3 {
+		glogging.Sugared.Info("broker.DeleteAgo: nothing to clear")
+		return nil
+	}
+
 	args := []interface{}{
 		cutoff,
 		len(keys),
 	}
 	resI, err := scriptCheckAndDelete.Run(ctx, it.cli, keys, args).Result()
-	if !(err == nil || errors.Is(err, redis.Nil)) {
+	if err != nil {
 		return ErrInternal
 	}
-	rt, ok := resI.(int64)
+	_, ok := resI.(int64)
 	if !ok {
 		return ErrInternal
-	}
-
-	if rt == LuaReturnCodeError {
-		return ErrNoMsg
 	}
 	return nil
 }
