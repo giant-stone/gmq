@@ -114,8 +114,8 @@ func TestClient_EnqueueDuplicatedMsg(t *testing.T) {
 	_, err = cli.Enqueue(context.Background(), msgWant)
 	require.ErrorIs(t, err, gmq.ErrMsgIdConflict, "ErrMsgIdConflict")
 
-	// remove msgId unique constraint via broker.Delete
-	err = broker.Delete(context.Background(), rsEnqueue.GetQueue(), msgId)
+	// remove msgId unique constraint via broker.DeleteMsg
+	err = broker.DeleteMsg(context.Background(), rsEnqueue.GetQueue(), msgId)
 	require.NoError(t, err, "Delete")
 
 	_, err = cli.Enqueue(context.Background(), msgWant)

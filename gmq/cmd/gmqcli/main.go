@@ -22,14 +22,14 @@ var (
 	cmdListMsg     bool
 	cmdDelMsg      bool
 	cmdStatsWeekly bool
-
-	cmdPauseq  string
-	cmdResumeq string
-	dsnRedis   string
-	msgId      string
-	payloadStr string
-	queueName  string
-	state      string
+	cmdDelQueue    bool
+	cmdPauseq      string
+	cmdResumeq     string
+	dsnRedis       string
+	msgId          string
+	payloadStr     string
+	queueName      string
+	state          string
 
 	limit  int64
 	offset uint64
@@ -46,6 +46,8 @@ func main() {
 	flag.BoolVar(&cmdGetMsg, "getmsg", false, "get a message detail")
 	flag.BoolVar(&cmdListMsg, "listmsg", false, "get a message detail")
 	flag.BoolVar(&cmdDelMsg, "del", false, "delete a message from queue")
+	flag.BoolVar(&cmdDelQueue, "delqueue", false, "delete a message from queue")
+	flag.BoolVar(&cmdDelQueue, "dq", false, "shortcur for delqueue")
 	flag.StringVar(&cmdPauseq, "pause", "", "queuename to pause")
 	flag.StringVar(&cmdResumeq, "resume", "", "queuename to resume")
 
@@ -59,9 +61,13 @@ func main() {
 
 	flag.Parse()
 
+	// cmdDelQueue = true
+	// queueName = "nx"
+	// dsnRedis = "redis://127.0.0.1:6379/0"
+
 	glogging.Init([]string{"stdout"}, loglevel)
 
-	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdListMsg && !cmdDelMsg && (cmdPauseq != "") && (cmdResumeq != "") && !cmdStatsWeekly {
+	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdListMsg && !cmdDelMsg && !cmdDelQueue && (cmdPauseq != "") && (cmdResumeq != "") && !cmdStatsWeekly {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
@@ -76,7 +82,7 @@ func main() {
 		resumeQueue(ctx, broker, cmdResumeq)
 		os.Exit(0)
 	}
-	fmt.Println("here", queueName, state)
+
 	if cmdPrintStats {
 		printStats(ctx, broker)
 	} else if cmdStatsWeekly {
@@ -93,6 +99,8 @@ func main() {
 		listMsg(ctx, broker, queueName)
 	} else if cmdDelMsg {
 		delMsg(ctx, broker, queueName, msgId)
+	} else if cmdDelQueue {
+		delQueue(ctx, broker, queueName)
 	} else {
 		flag.PrintDefaults()
 		os.Exit(1)
@@ -204,11 +212,21 @@ func listMsg(ctx context.Context, broker gmq.Broker, queueName string) {
 }
 
 func delMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
-	err := broker.Delete(ctx, queueName, msgId)
+	err := broker.DeleteMsg(ctx, queueName, msgId)
 	if err != nil {
 		if err != gmq.ErrNoMsg {
 			gutil.ExitOnErr(err)
 		}
 	}
 	fmt.Printf("queue=%s msgId=%s deleted \n", queueName, msgId)
+}
+
+func delQueue(ctx context.Context, broker gmq.Broker, queueName string) {
+	err := broker.DeleteQueue(ctx, queueName)
+	if err != nil {
+		if err != gmq.ErrNoMsg {
+			gutil.ExitOnErr(err)
+		}
+	}
+	fmt.Printf("queue %s cleared", queueName)
 }

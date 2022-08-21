@@ -11,7 +11,8 @@ type Broker interface {
 	Close() error
 	Complete(ctx context.Context, msg IMsg) error
 	Dequeue(ctx context.Context, queueName string) (*Msg, error)
-	Delete(ctx context.Context, queueName, msgId string) error
+	DeleteMsg(ctx context.Context, queueName, msgId string) error
+	DeleteQueue(ctx context.Context, queueName string) ( error)
 	DeleteAgo(ctx context.Context, queueName string, seconds int64) error
 
 	Enqueue(ctx context.Context, msg IMsg, opts ...OptionClient) (*Msg, error)

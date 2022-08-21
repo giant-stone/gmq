@@ -291,7 +291,38 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	}, nil
 }
 
-// scriptDelete delete a message.
+// scriptDeleteQueue delete a queue
+// KEYS[1] -> gmq:queuename:*
+
+var scriptDeleteQueue = redis.NewScript(`
+	for k,v in ipairs(KEYS) do 
+		redis.call('del', KEYS[k])
+	end
+	return nil
+`)
+
+func (it *BrokerRedis) DeleteQueue(ctx context.Context, queueName string) (err error) {
+	key := NewKeyQueuePattern(it.namespace, queueName)
+	keys, err := it.cli.Keys(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil
+		}
+		err = ErrInternal
+		return
+	}
+	_, err = scriptDeleteQueue.Run(ctx, it.cli, keys, 0).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil
+		}
+		err = ErrInternal
+		return
+	}
+	return
+}
+
+// scriptDeleteMsg delete a message.
 //
 // KEYS[1] -> gmq:<queueName>:pending
 // KEYS[2] -> gmq:<queueName>:processing
@@ -301,7 +332,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 // KEYS[6] -> gmq:<queueName>:uniq:<msgId>
 //
 // ARGV[1] -> <msgId>
-var scriptDelete = redis.NewScript(`
+var scriptDeleteMsg = redis.NewScript(`
 redis.call("LREM", KEYS[1], 0, ARGV[1])
 redis.call("LREM", KEYS[2], 0, ARGV[1])
 redis.call("LREM", KEYS[3], 0, ARGV[1])
@@ -314,7 +345,7 @@ else
 end
 `)
 
-func (it *BrokerRedis) Delete(ctx context.Context, queueName, msgId string) (err error) {
+func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (err error) {
 	keys := []string{
 		NewKeyQueuePending(it.namespace, queueName),
 		NewKeyQueueProcessing(it.namespace, queueName),
@@ -328,7 +359,7 @@ func (it *BrokerRedis) Delete(ctx context.Context, queueName, msgId string) (err
 		msgId,
 	}
 
-	resI, err := scriptDelete.Run(ctx, it.cli, keys, argv...).Result()
+	resI, err := scriptDeleteMsg.Run(ctx, it.cli, keys, argv...).Result()
 	if err != nil {
 		if err == redis.Nil {
 			err = ErrNoMsg
