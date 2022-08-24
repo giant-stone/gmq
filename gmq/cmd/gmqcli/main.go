@@ -39,15 +39,14 @@ var (
 
 func main() {
 	flag.StringVar(&loglevel, "l", "", "loglevel debug,info,warn,error")
-	flag.StringVar(&dsnRedis, "d", "redis://127.0.0.1:6379", "redis DSN")
+	flag.StringVar(&dsnRedis, "d", "redis://127.0.0.1:6379/0", "redis DSN")
 
 	flag.BoolVar(&cmdPrintStats, "stats", false, "print queue stats")
 	flag.BoolVar(&cmdAddMsg, "add", false, "append a message into queue")
 	flag.BoolVar(&cmdGetMsg, "getmsg", false, "get a message detail")
 	flag.BoolVar(&cmdListMsg, "listmsg", false, "get a message detail")
-	flag.BoolVar(&cmdDelMsg, "del", false, "delete a message from queue")
+	flag.BoolVar(&cmdDelMsg, "delmsg", false, "delete a message from queue")
 	flag.BoolVar(&cmdDelQueue, "delqueue", false, "delete a message from queue")
-	flag.BoolVar(&cmdDelQueue, "dq", false, "shortcur for delqueue")
 	flag.StringVar(&cmdPauseq, "pause", "", "queuename to pause")
 	flag.StringVar(&cmdResumeq, "resume", "", "queuename to resume")
 
