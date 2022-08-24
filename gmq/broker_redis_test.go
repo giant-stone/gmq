@@ -291,7 +291,9 @@ func TestDeleteAgo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, int(count))
 
-	broker.DeleteAgo(ctx, slowQueueName, int64(time.Now().Second()))
+	err = broker.DeleteAgo(ctx, slowQueueName, int64(time.Now().Second()))
+	require.NoError(t, err)
+
 	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, slowQueueName)).Result()
 	require.NoError(t, err)
 	require.Equal(t, 0, int(count))
@@ -312,9 +314,9 @@ func TestDeleteAgo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(ret))
 
-	// wait for a while
 	broker.SetClock(gmq.NewSimulatedClock(time.Now().Add(time.Second)))
-	broker.DeleteAgo(ctx, testQueueName, int64(time.Second))
+	err = broker.DeleteAgo(ctx, testQueueName, int64(time.Second))
+	require.NoError(t, err)
 
 	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
 	require.NoError(t, err)
@@ -323,6 +325,8 @@ func TestDeleteAgo(t *testing.T) {
 	ret, err = rdb.Keys(ctx, msgPattern(testQueueName)).Result()
 	require.NoError(t, err)
 	require.Equal(t, 0, len(ret))
+	err = broker.DeleteAgo(ctx, testQueueName, int64(time.Second))
+	require.NoError(t, err)
 }
 
 // KEYS[1] -> gmq:<queuename>:processing
