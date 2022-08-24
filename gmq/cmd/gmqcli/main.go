@@ -60,6 +60,10 @@ func main() {
 
 	flag.Parse()
 
+	// cmdDelQueue = true
+	// queueName = "nx"
+	// dsnRedis = "redis://127.0.0.1:6379/0"
+
 	glogging.Init([]string{"stdout"}, loglevel)
 
 	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdListMsg && !cmdDelMsg && !cmdDelQueue && (cmdPauseq != "") && (cmdResumeq != "") && !cmdStatsWeekly {
