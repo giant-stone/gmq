@@ -11,12 +11,14 @@ type Broker interface {
 	Close() error
 	Complete(ctx context.Context, msg IMsg) error
 	Dequeue(ctx context.Context, queueName string) (*Msg, error)
-	Delete(ctx context.Context, queueName, msgId string) error
+	DeleteMsg(ctx context.Context, queueName, msgId string) error
+	DeleteQueue(ctx context.Context, queueName string) ( error)
 	DeleteAgo(ctx context.Context, queueName string, seconds int64) error
 
 	Enqueue(ctx context.Context, msg IMsg, opts ...OptionClient) (*Msg, error)
 	Fail(ctx context.Context, msg IMsg, errFail error) error
-	Get(ctx context.Context, queueName, msgId string) (*Msg, error)
+	GetMsg(ctx context.Context, queueName, msgId string) (*Msg, error)
+	ListMsg(ctx context.Context, queueName, state string, limit, offset int64) ([]string, error)
 	GetStats(ctx context.Context) ([]*QueueStat, error)
 	Init(ctx context.Context, queueName string) error
 
