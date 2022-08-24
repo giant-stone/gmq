@@ -54,14 +54,14 @@ func TestScheduler_Register(t *testing.T) {
 		err = scheduler.Run()
 		require.NoError(t, err, "scheduler.Run")
 
-		_, err = broker.Get(ctx, sample.wantMsg.GetQueue(), sample.wantMsg.GetId())
-		require.ErrorIs(t, err, gmq.ErrNoMsg, "broker.Get")
+		_, err = broker.GetMsg(ctx, sample.wantMsg.GetQueue(), sample.wantMsg.GetId())
+		require.ErrorIs(t, err, gmq.ErrNoMsg, "broker.GetMsg")
 
 		time.Sleep(sample.wait)
 		scheduler.Shutdown()
 
-		gotMsg, err := broker.Get(ctx, sample.wantMsg.GetQueue(), sample.wantMsg.GetId())
-		require.NoError(t, err, "broker.Get")
+		gotMsg, err := broker.GetMsg(ctx, sample.wantMsg.GetQueue(), sample.wantMsg.GetId())
+		require.NoError(t, err, "broker.GetMsg")
 		require.Equal(t, sample.wantMsg.GetQueue(), gotMsg.GetQueue(), "GetQueue")
 		require.Equal(t, sample.wantMsg.GetId(), gotMsg.GetId(), "GetId")
 		require.Equal(t, sample.wantMsg.GetPayload(), gotMsg.GetPayload(), "GetPayload")
