@@ -2,9 +2,9 @@ package gmq
 
 import (
 	"context"
-	"errors"
 	"time"
 
+	"github.com/giant-stone/go/glogging"
 	"github.com/giant-stone/go/gstr"
 	"github.com/giant-stone/go/gtime"
 	"github.com/go-redis/redis/v8"
@@ -291,7 +291,38 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	}, nil
 }
 
-// scriptDelete delete a message.
+// scriptDeleteQueue delete a queue
+// KEYS[1] -> gmq:queuename:*
+
+var scriptDeleteQueue = redis.NewScript(`
+	for k,v in ipairs(KEYS) do 
+		redis.call('del', KEYS[k])
+	end
+	return nil
+`)
+
+func (it *BrokerRedis) DeleteQueue(ctx context.Context, queueName string) (err error) {
+	key := NewKeyQueuePattern(it.namespace, queueName)
+	keys, err := it.cli.Keys(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil
+		}
+		err = ErrInternal
+		return
+	}
+	_, err = scriptDeleteQueue.Run(ctx, it.cli, keys, 0).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil
+		}
+		err = ErrInternal
+		return
+	}
+	return
+}
+
+// scriptDeleteMsg delete a message.
 //
 // KEYS[1] -> gmq:<queueName>:pending
 // KEYS[2] -> gmq:<queueName>:processing
@@ -301,7 +332,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 // KEYS[6] -> gmq:<queueName>:uniq:<msgId>
 //
 // ARGV[1] -> <msgId>
-var scriptDelete = redis.NewScript(`
+var scriptDeleteMsg = redis.NewScript(`
 redis.call("LREM", KEYS[1], 0, ARGV[1])
 redis.call("LREM", KEYS[2], 0, ARGV[1])
 redis.call("LREM", KEYS[3], 0, ARGV[1])
@@ -314,7 +345,7 @@ else
 end
 `)
 
-func (it *BrokerRedis) Delete(ctx context.Context, queueName, msgId string) (err error) {
+func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (err error) {
 	keys := []string{
 		NewKeyQueuePending(it.namespace, queueName),
 		NewKeyQueueProcessing(it.namespace, queueName),
@@ -328,7 +359,7 @@ func (it *BrokerRedis) Delete(ctx context.Context, queueName, msgId string) (err
 		msgId,
 	}
 
-	resI, err := scriptDelete.Run(ctx, it.cli, keys, argv...).Result()
+	resI, err := scriptDeleteMsg.Run(ctx, it.cli, keys, argv...).Result()
 	if err != nil {
 		if err == redis.Nil {
 			err = ErrNoMsg
@@ -390,27 +421,30 @@ func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, seconds 
 	for _, state := range states {
 		tmp, err := it.cli.LRange(ctx, state, 0, -1).Result()
 		if err != nil {
-			return nil
+			return ErrInternal
 		}
+
 		for i := range tmp {
 			keys = append(keys, tmp[i], NewKeyMsgDetail(it.namespace, queueName, tmp[i]))
 		}
 	}
+
+	if len(keys) == 3 {
+		glogging.Sugared.Info("broker.DeleteAgo: nothing to clear")
+		return nil
+	}
+
 	args := []interface{}{
 		cutoff,
 		len(keys),
 	}
 	resI, err := scriptCheckAndDelete.Run(ctx, it.cli, keys, args).Result()
-	if !(err == nil || errors.Is(err, redis.Nil)) {
+	if err != nil {
 		return ErrInternal
 	}
-	rt, ok := resI.(int64)
+	_, ok := resI.(int64)
 	if !ok {
 		return ErrInternal
-	}
-
-	if rt == LuaReturnCodeError {
-		return ErrNoMsg
 	}
 	return nil
 }
@@ -502,7 +536,7 @@ func (it *BrokerRedis) SetClock(c Clock) {
 	it.clock = c
 }
 
-func (it *BrokerRedis) Get(ctx context.Context, queueName, msgId string) (msg *Msg, err error) {
+func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg *Msg, err error) {
 	values, err := it.cli.HGetAll(ctx, NewKeyMsgDetail(it.namespace, queueName, msgId)).Result()
 	if err != nil {
 		return
@@ -527,6 +561,23 @@ func (it *BrokerRedis) Get(ctx context.Context, queueName, msgId string) (msg *M
 		Created:     gstr.Atoi64(values["created"]),
 		Processedat: gstr.Atoi64(values["Processed"]),
 	}, nil
+}
+
+func (it *BrokerRedis) ListMsg(ctx context.Context, queueName, state string, offset, limit int64) (values []string, err error) {
+	if limit <= 0 {
+		limit = -1
+	}
+	values, err = it.cli.LRange(ctx, NewKeyQueueState(it.namespace, queueName, state), offset, limit).Result()
+	if err != nil {
+		return
+	}
+
+	if len(values) == 0 {
+		err = ErrNoMsg
+		return
+	}
+
+	return
 }
 
 type QueueStat struct {

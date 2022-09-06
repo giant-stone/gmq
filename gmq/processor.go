@@ -140,16 +140,13 @@ func (it *Processor) handleFailedMsg(msg IMsg, errFail error) {
 	err := it.broker.Fail(it.ctx, msg, errFail)
 	if errFail != err && it.errLogLimiter.Allow() {
 		it.logger.Errorf("queue:%s op:broker.Fail error(%v)", it.queueName, err)
-	} else {
-		// debug only
-		it.logger.Errorf("queue:%s id:%s failed. error(%v)", it.queueName, msg.GetId(), errFail)
 	}
 }
 
 func (it *Processor) handleSuccessMsg(msg IMsg) {
 	err := it.broker.Complete(it.ctx, msg)
 	if err != nil && it.errLogLimiter.Allow() {
-		it.logger.Errorf("queue:%s op:broker.Fail error(%v)", it.queueName, err)
+		it.logger.Errorf("queue:%s op:broker.Complete error(%v)", it.queueName, err)
 	}
 }
 
