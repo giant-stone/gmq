@@ -43,9 +43,11 @@ func main() {
 
 	flag.BoolVar(&cmdPrintStats, "stats", false, "print queue stats")
 	flag.BoolVar(&cmdAddMsg, "add", false, "append a message into queue")
-	flag.BoolVar(&cmdGetMsg, "getmsg", false, "get a message detail")
-	flag.BoolVar(&cmdListMsg, "listmsg", false, "get a message detail")
-	flag.BoolVar(&cmdDelMsg, "delmsg", false, "delete a message from queue")
+
+	flag.BoolVar(&cmdGetMsg, "get", false, "get a message detail")
+	flag.BoolVar(&cmdListMsg, "list", false, "list messages from a queue ")
+	flag.BoolVar(&cmdDelMsg, "del", false, "delete a message from queue")
+
 	flag.BoolVar(&cmdDelQueue, "delqueue", false, "delete a message from queue")
 	flag.StringVar(&cmdPauseq, "pause", "", "queuename to pause")
 	flag.StringVar(&cmdResumeq, "resume", "", "queuename to resume")
@@ -59,15 +61,12 @@ func main() {
 	flag.Uint64Var(&offset, "offset", 0, "use with -listmsg, first messages offset to display, start with 0")
 
 	flag.Parse()
-
-	// cmdDelQueue = true
-	// queueName = "nx"
-	// dsnRedis = "redis://127.0.0.1:6379/0"
+	flag.Usage = mdbcliUsage
 
 	glogging.Init([]string{"stdout"}, loglevel)
 
-	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdListMsg && !cmdDelMsg && !cmdDelQueue && (cmdPauseq != "") && (cmdResumeq != "") && !cmdStatsWeekly {
-		flag.PrintDefaults()
+	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdListMsg && !cmdDelMsg && !cmdDelQueue && cmdPauseq != "" && cmdResumeq != "" && !cmdStatsWeekly {
+		flag.Usage()
 		os.Exit(1)
 	}
 
@@ -92,7 +91,7 @@ func main() {
 		getMsg(ctx, broker, queueName, msgId)
 	} else if cmdListMsg {
 		if state == "" {
-			flag.PrintDefaults()
+			flag.Usage()
 			os.Exit(1)
 		}
 		listMsg(ctx, broker, queueName)
@@ -101,7 +100,7 @@ func main() {
 	} else if cmdDelQueue {
 		delQueue(ctx, broker, queueName)
 	} else {
-		flag.PrintDefaults()
+		flag.Usage()
 		os.Exit(1)
 	}
 
@@ -175,7 +174,6 @@ func printStatsWeekly(ctx context.Context, broker gmq.Broker) {
 	fmt.Printf("Total processed: %d, Total failed: %d, total: %d \n", totalInfo.Processed, totalInfo.Failed, totalInfo.Processed+totalInfo.Failed)
 }
 
-// ./gmqcli.bin -getmsg -i <msgId> -q <queueName>
 func getMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
 	msg, err := broker.GetMsg(ctx, queueName, msgId)
 	if err != nil {
@@ -193,7 +191,6 @@ func getMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
 	fmt.Println("INTERNAL\n", string(dat))
 }
 
-// ./gmqcli.bin -listmsg <queueName> -state failed [-limit 10 -offset 10]
 func listMsg(ctx context.Context, broker gmq.Broker, queueName string) {
 	msgs, err := broker.ListMsg(ctx, queueName, state, int64(offset), limit)
 	if err != nil {
@@ -228,4 +225,18 @@ func delQueue(ctx context.Context, broker gmq.Broker, queueName string) {
 		}
 	}
 	fmt.Printf("queue %s cleared", queueName)
+}
+
+func mdbcliUsage() {
+	fmt.Printf("\nmdbcli is a terminal supports gmq queue management\n\n")
+	//stat
+	fmt.Printf("-stats  \n\t print snapshots of all queues and statistics for the last 8 days\n\n")
+	fmt.Printf("-list  \n\t list all or part of messages of a queue \n\n\t -list <queueName> [-state failed|pending|processing] [-limit n] [-offset m]\n\n")
+	fmt.Printf("-get  \n\t print detail of certain message by offering its queue and id \n\n\t -get -i <msgId> -q <queueName> \n\n")
+	fmt.Printf("-add  \n\t add certain message by offering its queue, id and payload \n\n\t -add -i <msgId> -q <queueName> -p <payload> \n\n")
+	fmt.Printf("-del  \n\t delete a certain message with by offering its queue and id \n\n\t -del -i <msgId> -q <queueName> \n\n")
+	fmt.Printf("-delqueue  \n\t delete queue \n\n\t -delqueue -q <queueName>\n\n ")
+	fmt.Printf("-dq  \n\t shortcut for -delqueue \n\n")
+	fmt.Printf("-pause  \n\t pause queue consumption \n\n\t -pause -q <queueName>\n\n")
+	fmt.Printf("-resume  \n\t resume queue consumption \n\n\t -resume -q <queueName>\n\n")
 }
