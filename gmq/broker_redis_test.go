@@ -168,6 +168,7 @@ func TestFail(t *testing.T) {
 	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
 	countFailed := 0
 	countProcessed := 0
+	errFail := errors.New("this is a failure test for default queue")
 	mux.Handle(testQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
 		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
 		// 防止队列为空自旋
@@ -175,7 +176,7 @@ func TestFail(t *testing.T) {
 		wg.Done()
 		if rand.Intn(3) <= 2 {
 			countFailed++
-			return errors.New("this is a failure test for default queue")
+			return errFail
 		} else {
 			countProcessed++
 			return nil
@@ -208,6 +209,12 @@ func TestFail(t *testing.T) {
 		state, err := rdb.HGet(ctx, msgs[i], "state").Result()
 		require.NoError(t, err)
 		require.Equal(t, "failed", state)
+		dieat, err := rdb.HGet(ctx, msgs[i], "dieat").Result()
+		require.NotEqual(t, "", dieat)
+		processedat, err := rdb.HGet(ctx, msgs[i], "processedat").Result()
+		require.NotEqual(t, "", processedat)
+		errMsg, err := rdb.HGet(ctx, msgs[i], "err").Result()
+		require.Equal(t, errFail.Error(), errMsg)
 	}
 }
 
