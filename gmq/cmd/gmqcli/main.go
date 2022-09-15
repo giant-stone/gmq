@@ -229,14 +229,13 @@ func delQueue(ctx context.Context, broker gmq.Broker, queueName string) {
 
 func mdbcliUsage() {
 	fmt.Printf("\nmdbcli is a terminal supports gmq queue management\n\n")
-	//stat
-	fmt.Printf("-stats  \n\t print snapshots of all queues and statistics for the last 8 days\n\n")
-	fmt.Printf("-list  \n\t list all or part of messages of a queue \n\n\t -list <queueName> [-state failed|pending|processing] [-limit n] [-offset m]\n\n")
-	fmt.Printf("-get  \n\t print detail of certain message by offering its queue and id \n\n\t -get -i <msgId> -q <queueName> \n\n")
-	fmt.Printf("-add  \n\t add certain message by offering its queue, id and payload \n\n\t -add -i <msgId> -q <queueName> -p <payload> \n\n")
-	fmt.Printf("-del  \n\t delete a certain message with by offering its queue and id \n\n\t -del -i <msgId> -q <queueName> \n\n")
-	fmt.Printf("-delqueue  \n\t delete queue \n\n\t -delqueue -q <queueName>\n\n ")
-	fmt.Printf("-dq  \n\t shortcut for -delqueue \n\n")
-	fmt.Printf("-pause  \n\t pause queue consumption \n\n\t -pause -q <queueName>\n\n")
-	fmt.Printf("-resume  \n\t resume queue consumption \n\n\t -resume -q <queueName>\n\n")
+	fmt.Printf("Usage: %s <one of following>", os.Args[0])
+	fmt.Printf("  -stats print snapshots of all queues and statistics for the last 8 days\n\n")
+	fmt.Printf("  -list list all or part of messages of a queue \n\n\t -list <queueName> [-state failed|pending|processing] [-limit n] [-offset m]\n\n")
+	fmt.Printf("  -get print detail of certain message by offering its queue and id \n\n\t -get -i <msgId> -q <queueName> \n\n")
+	fmt.Printf("  -add add certain message by offering its queue, id and payload \n\n\t -add -i <msgId> -q <queueName> -p <payload> \n\n")
+	fmt.Printf("  -del delete a certain message with by offering its queue and id \n\n\t -del -i <msgId> -q <queueName> \n\n")
+	fmt.Printf("  -delqueue delete queue \n\n\t -delqueue -q <queueName>\n\n")
+	fmt.Printf("  -pause pause queue consumption \n\n\t -pause -q <queueName>\n\n")
+	fmt.Printf("  -resume resume queue consumption \n\n\t -resume -q <queueName>\n\n")
 }
