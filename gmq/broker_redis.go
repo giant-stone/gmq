@@ -559,7 +559,9 @@ func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg
 		Queue:       queueName,
 		State:       values["state"],
 		Created:     gstr.Atoi64(values["created"]),
-		Processedat: gstr.Atoi64(values["Processed"]),
+		Processedat: gstr.Atoi64(values["processedat"]),
+		Dieat:       gstr.Atoi64(values["dieat"]),
+		Err:         values["err"],
 	}, nil
 }
 
@@ -711,12 +713,12 @@ var scriptFail = redis.NewScript(`
 if redis.call("EXISTS", KEYS[1]) == 0 then
 	return 1
 end
-redis.call("LREM", KEYS[2], 0, ARGV[4])
-redis.call("LPUSH", KEYS[3], ARGV[4])
+redis.call("LREM", KEYS[2], 0, ARGV[1])
+redis.call("LPUSH", KEYS[3], ARGV[1])
 redis.call("INCR", KEYS[4])
 redis.call("HSET", KEYS[1], "state", ARGV[2])
 redis.call("HSET", KEYS[1], "dieat", ARGV[3])
-redis.call("HSET", KEYS[1], "err", ARGV[5])
+redis.call("HSET", KEYS[1], "err", ARGV[4])
 return 0
 `)
 
@@ -734,10 +736,9 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 	}
 
 	args := []interface{}{
-		int64((time.Hour * 24 * 7).Seconds()),
+		msgId,
 		MsgStateFailed,
 		it.clock.Now().UnixMilli(),
-		msgId,
 		errFail.Error(),
 	}
 
