@@ -80,7 +80,6 @@ func (it *CronJob) Run() {
 		if it.errHandler != nil {
 			it.errHandler(it.msg, it.opts, err)
 		}
-		it.logger.Errorf("scheduler client.Enqueue message failed, id=%s queue=%s", it.msg.GetId(), it.msg.GetQueue())
 	}
 }
 
