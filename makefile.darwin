@@ -1,0 +1,8 @@
+GOOS=darwin
+GOARCH=arm64
+
+export GOOS
+export GOARCH
+
+all:
+	go build -o gmqcli.bin gmq/cmd/gmqcli/main.go
