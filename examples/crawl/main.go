@@ -6,7 +6,7 @@ import (
 
 	"github.com/giant-stone/go/gutil"
 
-	"github.com/giant-stone/gmq/demo/crawl/impl"
+	"github.com/giant-stone/gmq/examples/crawl/impl"
 	"github.com/giant-stone/gmq/gmq"
 )
 
