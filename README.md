@@ -104,7 +104,7 @@ func main() {
 
 ```
 
-完整代码见 demo/pushmsg/main.go .
+完整代码见 examples/pushmsg/main.go .
 
 如果不加队列配置，默认全速消费，每个队列会生成和机器 CPU (`runtime.NumCPU()`)数量一致 workers
 
@@ -139,7 +139,7 @@ func main() {
 	// ...
 ```
 
-完整代码见 demo/queuecfg/main.go .
+完整代码见 examples/queuecfg/main.go .
 
 消费效果输出
 
