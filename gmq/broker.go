@@ -12,7 +12,7 @@ type Broker interface {
 	Complete(ctx context.Context, msg IMsg) error
 	Dequeue(ctx context.Context, queueName string) (*Msg, error)
 	DeleteMsg(ctx context.Context, queueName, msgId string) error
-	DeleteQueue(ctx context.Context, queueName string) ( error)
+	DeleteQueue(ctx context.Context, queueName string) error
 	DeleteAgo(ctx context.Context, queueName string, seconds int64) error
 
 	Enqueue(ctx context.Context, msg IMsg, opts ...OptionClient) (*Msg, error)
@@ -27,6 +27,7 @@ type Broker interface {
 	GetStatsWeekly(ctx context.Context) (*[]QueueDailyStat, *QueueDailyStat, error)
 	Pause(ctx context.Context, Queuename string) error
 	Resume(ctx context.Context, Queuename string) error
+
 	// SetClock custom internal clock for testing
 	SetClock(c Clock)
 }
