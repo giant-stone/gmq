@@ -33,5 +33,13 @@ jobs:
       - name: Build
         run: go build -v ./...
 
+      - name: setup envs on Windows
+        if: runner.os == 'Windows'
+        run: echo "GMQ_RDS=$env:redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1" >> $env:GITHUB_ENV
+
+      - name: setup envs on Unixlike
+        if: runner.os != 'Windows'
+        run: echo "GMQ_RDS=redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1" >> $GITHUB_ENV
+
       - name: Test
-        run: go test -v ./... -tags redis
+        run: go test -v ./...

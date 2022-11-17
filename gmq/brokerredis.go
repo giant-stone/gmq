@@ -158,7 +158,7 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 		args := []interface{}{
 			payload,
 			MsgStatePending,
-			now,
+			nowInMs,
 			msgId,
 		}
 		resI, err = scriptEnqueue.Run(ctx, it.cli, keys, args...).Result()
@@ -172,7 +172,7 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 			uniqueInMs,
 			payload,
 			MsgStatePending,
-			now,
+			nowInMs,
 			msgId,
 		}
 		resI, err = scriptEnqueueUnique.Run(ctx, it.cli, keys, args...).Result()

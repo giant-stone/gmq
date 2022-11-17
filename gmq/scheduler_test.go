@@ -1,6 +1,3 @@
-//go:build redis
-// +build redis
-
 package gmq_test
 
 import (
@@ -15,7 +12,7 @@ import (
 )
 
 func TestNewScheduler(t *testing.T) {
-	broker := setup(t)
+	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
 	scheduler := gmq.NewScheduler(gmq.SchedulerParams{Ctx: context.Background(), Broker: broker})
@@ -42,7 +39,7 @@ func TestScheduler_Register(t *testing.T) {
 	}
 
 	for _, sample := range samples {
-		broker := setup(t)
+		broker := setupBrokerRedis(t)
 		defer broker.Close()
 
 		now := time.Now()
@@ -70,7 +67,7 @@ func TestScheduler_Register(t *testing.T) {
 		require.Equal(t, sample.wantMsg.GetPayload(), gotMsg.GetPayload(), "GetPayload")
 		require.Equal(t, sample.wantMsg.GetPayload(), gotMsg.GetPayload(), "GetPayload")
 		require.Equal(t, gmq.MsgStatePending, gotMsg.State, "msg.State")
-		require.Equal(t, now.Add(sample.wait).UnixMilli()/1000, gotMsg.Created/1000, "msg.Created")
+		require.Equal(t, now.Add(sample.wait).Unix(), gotMsg.Created/1000, "msg.Created")
 		require.Equal(t, int64(0), gotMsg.Processedat, "msg.Processedat")
 
 		gotMsg, err = broker.Dequeue(ctx, sample.wantMsg.GetQueue())
@@ -80,7 +77,7 @@ func TestScheduler_Register(t *testing.T) {
 		require.Equal(t, sample.wantMsg.GetPayload(), gotMsg.GetPayload(), "GetPayload")
 		require.Equal(t, sample.wantMsg.GetPayload(), gotMsg.GetPayload(), "GetPayload")
 		require.Equal(t, gmq.MsgStateProcessing, gotMsg.State, "msg.State")
-		require.Equal(t, now.Add(sample.wait).UnixMilli()/1000, gotMsg.Created/1000, "msg.Created")
+		require.Equal(t, now.Add(sample.wait).Unix(), gotMsg.Created/1000, "msg.Created")
 		require.LessOrEqual(t, now.UnixMilli(), gotMsg.Processedat, "msg.Processedat")
 
 		_, err = broker.Dequeue(ctx, sample.wantMsg.GetQueue())
@@ -104,7 +101,7 @@ func TestScheduler_Unregister(t *testing.T) {
 	}
 
 	for _, sample := range samples {
-		broker := setup(t)
+		broker := setupBrokerRedis(t)
 		defer broker.Close()
 
 		ctx := context.Background()

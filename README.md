@@ -166,3 +166,19 @@ seckill 队列限制 worker 一个，每 500 毫秒 生产 1 条，消费间隔 
 ## Advanced Topics
 
 更多功能见 [giant-stone/gmq/wiki](https://github.com/giant-stone/gmq/wiki)
+
+## Run tests
+
+run tests on Windows
+
+```
+set GMQ_RDS="redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1"
+go test -v ./...
+```
+
+run tests on macOS/Linux
+
+```
+export GMQ_RDS="redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1"
+go test -v ./...
+```

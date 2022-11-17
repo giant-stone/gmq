@@ -1,5 +1,3 @@
-//go:build redis
-
 package gmq_test
 
 import (
@@ -22,7 +20,7 @@ import (
 	"github.com/giant-stone/gmq/gmq"
 )
 
-func TestPauseAndResume(t *testing.T) {
+func TestGmq_PauseAndResume(t *testing.T) {
 	broker := getTestBroker(t)
 	defer broker.Close()
 
@@ -37,7 +35,7 @@ func TestPauseAndResume(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cli, err := gmq.NewClient(dsnRedis)
+	cli, err := gmq.NewClientFromBroker(broker)
 	gutil.ExitOnErr(err)
 	payload := []byte("{\"data\": \"Msg Fromm TestPauseAndResume\"}")
 	go func() {
@@ -130,9 +128,9 @@ func TestPauseAndResume(t *testing.T) {
 
 }
 
-func TestFail(t *testing.T) {
+func TestGmq_Fail(t *testing.T) {
 	broker := getTestBroker(t)
-	rdb := getTestClient(t)
+	rdb := getTestRedisClient(t)
 	defer broker.Close()
 
 	testQueueName := "QueueTestFail"
@@ -224,12 +222,12 @@ func workIntervalFunc() time.Duration {
 	return time.Second * time.Duration(1)
 }
 
-func TestDeleteAgo(t *testing.T) {
+func TestGmq_DeleteAgo(t *testing.T) {
 	broker := getTestBroker(t)
 	// 设置仿真时钟
 	now := time.Now()
 	broker.SetClock(gmq.NewSimulatedClock(now))
-	rdb := getTestClient(t)
+	rdb := getTestRedisClient(t)
 	defer broker.Close()
 	mux := gmq.NewMux()
 
@@ -420,7 +418,7 @@ func TestGetStatsWeekly(t *testing.T) {
 	lastRecord := 15
 	now := time.Now().AddDate(0, 0, -lastRecord)
 	broker := getTestBroker(t)
-	rdb := getTestClient(t)
+	rdb := getTestRedisClient(t)
 	broker.SetClock(gmq.NewSimulatedClock(now))
 	var err error
 	// 生成记录

@@ -1,5 +1,3 @@
-//go:build redis
-
 package gmq_test
 
 import (
@@ -14,7 +12,7 @@ import (
 )
 
 func TestClient_Enqueue(t *testing.T) {
-	broker := setup(t)
+	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
 	cli, err := gmq.NewClientFromBroker(broker)
@@ -55,7 +53,7 @@ func TestClient_Enqueue(t *testing.T) {
 }
 
 func TestClient_Dequeue(t *testing.T) {
-	broker := setup(t)
+	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
 	cli, err := gmq.NewClientFromBroker(broker)
@@ -87,7 +85,7 @@ func TestClient_Dequeue(t *testing.T) {
 }
 
 func TestClient_EnqueueDuplicatedMsg(t *testing.T) {
-	broker := setup(t)
+	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
 	cli, err := gmq.NewClientFromBroker(broker)
@@ -125,7 +123,7 @@ func TestClient_EnqueueDuplicatedMsg(t *testing.T) {
 }
 
 func TestClient_EnqueueOptQueueName(t *testing.T) {
-	broker := setup(t)
+	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
 	cli, err := gmq.NewClientFromBroker(broker)
@@ -157,7 +155,7 @@ func TestClient_EnqueueOptQueueName(t *testing.T) {
 }
 
 func TestClient_EnqueueOptUniqueIn(t *testing.T) {
-	broker := setup(t)
+	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
 	now := time.Now()
