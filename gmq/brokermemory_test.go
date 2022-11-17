@@ -40,9 +40,10 @@ func TestBrokerInMemory_Enqueue(t *testing.T) {
 	require.Equal(t, gmq.MsgStatePending, msgGot.State)
 	require.Greater(t, msgGot.Created, int64(0))
 	require.GreaterOrEqual(t, time.Now().UnixMilli(), msgGot.Created)
-	require.Equal(t, msgGot.Expiredat, int64(0))
 	require.Equal(t, msgGot.Dieat, int64(0))
+	require.Equal(t, msgGot.Expiredat, int64(0))
 	require.Equal(t, msgGot.Err, "")
+	require.Equal(t, msgGot.Processedat, int64(0))
 }
 
 func TestBrokerInMemory_GetMsg(t *testing.T) {
@@ -77,9 +78,10 @@ func TestBrokerInMemory_GetMsg(t *testing.T) {
 	require.Equal(t, gmq.MsgStatePending, msgGot.State)
 	require.Greater(t, msgGot.Created, int64(0))
 	require.GreaterOrEqual(t, time.Now().UnixMilli(), msgGot.Created)
-	require.Equal(t, msgGot.Expiredat, int64(0))
 	require.Equal(t, msgGot.Dieat, int64(0))
+	require.Equal(t, msgGot.Expiredat, int64(0))
 	require.Equal(t, msgGot.Err, "")
+	require.Equal(t, msgGot.Processedat, int64(0))
 }
 
 func TestBrokerInMemory_Dequeue(t *testing.T) {
@@ -112,7 +114,8 @@ func TestBrokerInMemory_Dequeue(t *testing.T) {
 	require.Equal(t, gmq.MsgStateProcessing, msgGot.State)
 	require.Greater(t, msgGot.Created, int64(0))
 	require.GreaterOrEqual(t, time.Now().UnixMilli(), msgGot.Created)
-	require.Equal(t, msgGot.Expiredat, int64(0))
 	require.Equal(t, msgGot.Dieat, int64(0))
+	require.Equal(t, msgGot.Expiredat, int64(0))
 	require.Equal(t, msgGot.Err, "")
+	require.GreaterOrEqual(t, time.Now().UnixMilli(), msgGot.Processedat)
 }

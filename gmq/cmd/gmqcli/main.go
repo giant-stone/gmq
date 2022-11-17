@@ -65,7 +65,7 @@ func main() {
 	flag.Parse()
 	flag.Usage = mdbcliUsage
 
-	glogging.Init([]string{"stdout"}, loglevel)
+	glogging.Init([]string{"stdout"}, glogging.Loglevel(loglevel))
 
 	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdListMsg && !cmdDelMsg && !cmdDelQueue && cmdPauseq != "" && cmdResumeq != "" && !cmdStatsWeekly {
 		flag.Usage()

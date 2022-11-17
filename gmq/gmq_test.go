@@ -1,8 +1,11 @@
+//go:build redis
+// +build redis
+
 package gmq_test
 
 import (
 	"context"
-	"flag"
+	"os"
 	"testing"
 
 	"github.com/giant-stone/go/glogging"
@@ -13,24 +16,23 @@ import (
 )
 
 var (
-	dsnRedis        string
+	defaultLoglevel = "debug"
+	defaultDsnRedis = "redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1"
+)
+
+var (
 	universalBroker gmq.Broker
 	universalCli    *redis.Client
 )
 
-func init() {
-	glogging.Init([]string{"stdout"}, "debug")
-	flag.StringVar(
-		&dsnRedis,
-		"dsnRedis",
-		"redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1",
-		"redis data source name for testing",
-	)
-}
-
 // setup returns a redis broker for testing
 func setup(tb testing.TB) (broker gmq.Broker) {
 	tb.Helper()
+
+	dsnRedis := os.Getenv("REDIS", defaultDsnRedis)
+	loglevel := os.Getenv("LOGLEVEL", defaultLoglevel)
+	glogging.Init([]string{"stderr"}, glogging.Loglevel(loglevel))
+
 	opts, err := redis.ParseURL(dsnRedis)
 	require.NoError(tb, err, "redis.ParseURL")
 	cli := redis.NewClient(opts)

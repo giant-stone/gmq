@@ -1,3 +1,5 @@
+//go:build redis
+
 package gmq_test
 
 import (
