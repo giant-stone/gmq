@@ -35,6 +35,8 @@ func MakeRedisUniversalClient(opts *redis.Options) (rs interface{}) {
 }
 
 type BrokerRedis struct {
+	BrokerUnimplemented
+
 	cli       redis.UniversalClient
 	clock     Clock
 	namespace string
@@ -147,7 +149,9 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 
 	it.updateQueueList(ctx, queueName)
 
-	now := it.clock.Now().UnixMilli()
+	now := it.clock.Now()
+	nowInMs := now.UnixMilli()
+	var expiredAt int64
 	var resI interface{}
 	if uniqueInMs == 0 {
 		keys := []string{NewKeyMsgDetail(it.namespace, queueName, msgId), NewKeyQueuePending(it.namespace, queueName)}
@@ -174,6 +178,10 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 		resI, err = scriptEnqueueUnique.Run(ctx, it.cli, keys, args...).Result()
 	}
 
+	if uniqueInMs > 0 {
+		expiredAt = now.Add(time.Millisecond * time.Duration(uniqueInMs)).UnixMilli()
+	}
+
 	if err != nil {
 		return
 	}
@@ -190,11 +198,12 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 	}
 
 	return &Msg{
-		Created: now,
-		Id:      msgId,
-		Payload: payload,
-		Queue:   queueName,
-		State:   MsgStatePending,
+		Created:   nowInMs,
+		Expiredat: expiredAt,
+		Id:        msgId,
+		Payload:   payload,
+		Queue:     queueName,
+		State:     MsgStatePending,
 	}, nil
 }
 
@@ -280,6 +289,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	state, _ := values["state"].(string)
 	created, _ := values["created"].(string)
 	processedat, _ := values["processedat"].(string)
+	expiredat, _ := values["expiredat"].(string)
 
 	return &Msg{
 		Payload:     []byte(payload),
@@ -287,6 +297,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 		Queue:       queueName,
 		State:       state,
 		Created:     gstr.Atoi64(created),
+		Expiredat:   gstr.Atoi64(expiredat),
 		Processedat: gstr.Atoi64(processedat),
 	}, nil
 }
@@ -559,6 +570,7 @@ func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg
 		Queue:       queueName,
 		State:       values["state"],
 		Created:     gstr.Atoi64(values["created"]),
+		Expiredat:   gstr.Atoi64(values["expiredat"]),
 		Processedat: gstr.Atoi64(values["processedat"]),
 		Dieat:       gstr.Atoi64(values["dieat"]),
 		Err:         values["err"],

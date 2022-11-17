@@ -14,4 +14,6 @@ var (
 	ErrWaitTimeOut = errors.New("operation times out")
 
 	ErrInvalidQueue = errors.New("invalid queue name")
+
+	ErrNotImplemented = errors.New("method not implemented")
 )

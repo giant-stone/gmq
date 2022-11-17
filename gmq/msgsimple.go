@@ -13,6 +13,7 @@ type Msg struct {
 
 	Created     int64  `json:"created"`
 	Dieat       int64  `json:"dieat"`
+	Expiredat   int64  `json:"expiredat"`
 	Err         string `json:"err"`
 	Processedat int64  `json:"processedat"`
 	State       string `json:"state"`
