@@ -18,7 +18,10 @@ type Broker interface {
 	Enqueue(ctx context.Context, msg IMsg, opts ...OptionClient) (*Msg, error)
 	Fail(ctx context.Context, msg IMsg, errFail error) error
 	GetMsg(ctx context.Context, queueName, msgId string) (*Msg, error)
+
+	// return a list message id of queue with specified name and limit
 	ListMsg(ctx context.Context, queueName, state string, limit, offset int64) ([]string, error)
+
 	GetStats(ctx context.Context) ([]*QueueStat, error)
 	Init(ctx context.Context, queueName string) error
 
