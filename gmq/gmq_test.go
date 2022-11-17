@@ -29,8 +29,14 @@ var (
 func setup(tb testing.TB) (broker gmq.Broker) {
 	tb.Helper()
 
-	dsnRedis := os.Getenv("REDIS", defaultDsnRedis)
-	loglevel := os.Getenv("LOGLEVEL", defaultLoglevel)
+	dsnRedis := os.Getenv("REDIS")
+	if dsnRedis == "" {
+		dsnRedis = defaultDsnRedis
+	}
+	loglevel := os.Getenv("LOGLEVEL")
+	if loglevel == "" {
+		loglevel = defaultLoglevel
+	}
 	glogging.Init([]string{"stderr"}, glogging.Loglevel(loglevel))
 
 	opts, err := redis.ParseURL(dsnRedis)
