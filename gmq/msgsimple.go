@@ -11,12 +11,17 @@ type Msg struct {
 	Id      string `json:"id"`
 	Queue   string `json:"queue"`
 
-	Created     int64  `json:"created"`
-	Dieat       int64  `json:"dieat"`
-	Expiredat   int64  `json:"expiredat"`
-	Err         string `json:"err"`
-	Processedat int64  `json:"processedat"`
-	State       string `json:"state"`
+	// message created at timestamp in Unix milliseconds
+	Created int64 `json:"created"`
+
+	// expired timestamp in Unix milliseconds
+	Expiredat int64 `json:"expiredat"`
+
+	Err   string `json:"err"`
+	State string `json:"state"`
+
+	// state last changed timestamp in Unix milliseconds
+	Updated int64 `json:"updated"`
 }
 
 func (it *Msg) GetPayload() []byte {

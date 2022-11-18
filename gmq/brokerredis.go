@@ -292,13 +292,13 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	expiredat, _ := values["expiredat"].(string)
 
 	return &Msg{
-		Payload:     []byte(payload),
-		Id:          msgId,
-		Queue:       queueName,
-		State:       state,
-		Created:     gstr.Atoi64(created),
-		Expiredat:   gstr.Atoi64(expiredat),
-		Processedat: gstr.Atoi64(processedat),
+		Payload:   []byte(payload),
+		Id:        msgId,
+		Queue:     queueName,
+		State:     state,
+		Created:   gstr.Atoi64(created),
+		Expiredat: gstr.Atoi64(expiredat),
+		Updated:   gstr.Atoi64(processedat),
 	}, nil
 }
 
@@ -338,9 +338,10 @@ func (it *BrokerRedis) DeleteQueue(ctx context.Context, queueName string) (err e
 // KEYS[1] -> gmq:<queueName>:pending
 // KEYS[2] -> gmq:<queueName>:processing
 // KEYS[3] -> gmq:<queueName>:waiting
-// KEYS[4] -> gmq:<queueName>:failed
-// KEYS[5] -> gmq:<queueName>:msg:<msgId>
-// KEYS[6] -> gmq:<queueName>:uniq:<msgId>
+// KEYS[4] -> gmq:<queueName>:completed
+// KEYS[5] -> gmq:<queueName>:failed
+// KEYS[6] -> gmq:<queueName>:msg:<msgId>
+// KEYS[7] -> gmq:<queueName>:uniq:<msgId>
 //
 // ARGV[1] -> <msgId>
 var scriptDeleteMsg = redis.NewScript(`
@@ -348,8 +349,9 @@ redis.call("LREM", KEYS[1], 0, ARGV[1])
 redis.call("LREM", KEYS[2], 0, ARGV[1])
 redis.call("LREM", KEYS[3], 0, ARGV[1])
 redis.call("LREM", KEYS[4], 0, ARGV[1])
-redis.call("DEL", KEYS[6])
-if redis.call("DEL", KEYS[5]) == 0 then
+redis.call("LREM", KEYS[5], 0, ARGV[1])
+redis.call("DEL", KEYS[7])
+if redis.call("DEL", KEYS[6]) == 0 then
 	return 1
 else
 	return 0
@@ -361,6 +363,7 @@ func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (
 		NewKeyQueuePending(it.namespace, queueName),
 		NewKeyQueueProcessing(it.namespace, queueName),
 		NewKeyQueueWaiting(it.namespace, queueName),
+		NewKeyQueueCompleted(it.namespace, queueName),
 		NewKeyQueueFailed(it.namespace, queueName),
 		NewKeyMsgDetail(it.namespace, queueName, msgId),
 		NewKeyMsgUnique(it.namespace, queueName, msgId),
@@ -416,8 +419,8 @@ var scriptCheckAndDelete = redis.NewScript(`
 `)
 
 // delete entries old than first entry of pending
-func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, seconds int64) error {
-	cutoff := it.clock.Now().Add(-(time.Second) * time.Duration(seconds)).UnixMilli()
+func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, duration time.Duration) error {
+	cutoff := it.clock.Now().Add(-duration).UnixMilli()
 
 	states := []string{
 		NewKeyQueueFailed(it.namespace, queueName),
@@ -464,7 +467,7 @@ func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, seconds 
 //
 // KEYS[1] -> gmq:<queueName>:processing
 // KEYS[2] -> gmq:<queueName>:msg:<msgId>
-// KEYS[3] -> gmq:<queueName>:processed:<YYYY-MM-DD>
+// KEYS[3] -> gmq:<queueName>:completed:<YYYY-MM-DD>
 //
 // ARGV[1] -> <msgId>
 var scriptComplete = redis.NewScript(`
@@ -513,7 +516,7 @@ func (it *BrokerRedis) Complete(ctx context.Context, msg IMsg) (err error) {
 	keys := []string{
 		NewKeyQueueProcessing(it.namespace, queueName),
 		NewKeyMsgDetail(it.namespace, queueName, msgId),
-		NewKeyDailyStatProcessed(it.namespace, queueName, gtime.UnixTime2YyyymmddUtc(it.clock.Now().Unix())),
+		NewKeyDailyStatCompleted(it.namespace, queueName, gtime.UnixTime2YyyymmddUtc(it.clock.Now().Unix())),
 	}
 	args := []interface{}{
 		msgId,
@@ -565,15 +568,13 @@ func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg
 	}
 
 	return &Msg{
-		Payload:     []byte(payload),
-		Id:          msgId,
-		Queue:       queueName,
-		State:       values["state"],
-		Created:     gstr.Atoi64(values["created"]),
-		Expiredat:   gstr.Atoi64(values["expiredat"]),
-		Processedat: gstr.Atoi64(values["processedat"]),
-		Dieat:       gstr.Atoi64(values["dieat"]),
-		Err:         values["err"],
+		Payload: []byte(payload),
+		Id:      msgId,
+		Queue:   queueName,
+		Created: gstr.Atoi64(values["created"]),
+		Err:     values["err"],
+		State:   values["state"],
+		Updated: gstr.Atoi64(values["updated"]),
 	}, nil
 }
 
@@ -684,7 +685,7 @@ func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *Que
 
 	rs = &QueueDailyStat{Date: date}
 	for _, queueName := range queueNames {
-		processed, _ := it.cli.Get(ctx, NewKeyDailyStatProcessed(it.namespace, queueName, date)).Result()
+		processed, _ := it.cli.Get(ctx, NewKeyDailyStatCompleted(it.namespace, queueName, date)).Result()
 		failed, _ := it.cli.Get(ctx, NewKeyDailyStatFailed(it.namespace, queueName, date)).Result()
 
 		if processed != "" {

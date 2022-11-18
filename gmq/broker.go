@@ -1,10 +1,16 @@
 package gmq
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 const (
-	TTLMsg     = 60 * 60 * 24 * 15 // 15 days
-	TTLDeadMsg = 60 * 60 * 24 * 3  // 3 days
+	// any state except failed message life time
+	TTLMsg = 60 * 60 * 24 * 7 // 7 days
+
+	// failed state message life time
+	TTLDeadMsg = 60 * 60 * 24 * 3 // 3 days
 )
 
 type Broker interface {
@@ -13,7 +19,7 @@ type Broker interface {
 	Dequeue(ctx context.Context, queueName string) (*Msg, error)
 	DeleteMsg(ctx context.Context, queueName, id string) error
 	DeleteQueue(ctx context.Context, queueName string) error
-	DeleteAgo(ctx context.Context, queueName string, seconds int64) error
+	DeleteAgo(ctx context.Context, queueName string, duration time.Duration) error
 
 	Enqueue(ctx context.Context, msg IMsg, opts ...OptionClient) (*Msg, error)
 	Fail(ctx context.Context, msg IMsg, errFail error) error

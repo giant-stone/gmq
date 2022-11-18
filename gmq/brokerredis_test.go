@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -20,8 +21,58 @@ import (
 	"github.com/giant-stone/gmq/gmq"
 )
 
+var (
+	defaultLoglevel = "debug"
+)
+
+var (
+	universalBrokerRedis gmq.Broker
+	universalRedisClient *redis.Client
+)
+
+// setupBrokerRedis returns a redis broker for testing
+func setupBrokerRedis(tb testing.TB) (broker gmq.Broker) {
+	tb.Helper()
+
+	dsnRedis := os.Getenv("GMQ_RDS")
+	if dsnRedis == "" {
+		tb.Skip("skip all redis broker releated tests because of env GMQ_RDS not set")
+	}
+
+	loglevel := os.Getenv("GMQ_LOGLEVEL")
+	if loglevel == "" {
+		loglevel = defaultLoglevel
+	}
+	glogging.Init([]string{"stderr"}, glogging.Loglevel(loglevel))
+
+	opts, err := redis.ParseURL(dsnRedis)
+	require.NoError(tb, err, "redis.ParseURL")
+
+	cli := redis.NewClient(opts)
+	err = cli.FlushDB(context.Background()).Err()
+	require.NoError(tb, err, "cli.FlushDB")
+
+	broker, err = gmq.NewBrokerFromRedisClient(cli)
+	require.NoError(tb, err, "gmq.NewBrokerFromRedisClient")
+
+	universalRedisClient = cli
+	universalBrokerRedis = broker
+	return universalBrokerRedis
+}
+
+func getTestBrokerRedis(t testing.TB) gmq.Broker {
+	return setupBrokerRedis(t)
+}
+
+func getTestRedisClient(t testing.TB) *redis.Client {
+	setupBrokerRedis(t)
+	err := universalRedisClient.FlushDB(context.Background()).Err()
+	require.NoError(t, err, "cli.FlushDB")
+	return universalRedisClient
+}
+
 func TestGmq_PauseAndResume(t *testing.T) {
-	broker := getTestBroker(t)
+	broker := getTestBrokerRedis(t)
 	defer broker.Close()
 
 	testQueueName := "QueueTestPauseAndResume"
@@ -129,7 +180,7 @@ func TestGmq_PauseAndResume(t *testing.T) {
 }
 
 func TestGmq_Fail(t *testing.T) {
-	broker := getTestBroker(t)
+	broker := getTestBrokerRedis(t)
 	rdb := getTestRedisClient(t)
 	defer broker.Close()
 
@@ -170,7 +221,6 @@ func TestGmq_Fail(t *testing.T) {
 	countProcessed := 0
 	errFail := errors.New("this is a failure test for default queue")
 	mux.Handle(testQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
-		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
 		// 防止队列为空自旋
 		time.Sleep(10 * time.Millisecond)
 		wg.Done()
@@ -223,7 +273,7 @@ func workIntervalFunc() time.Duration {
 }
 
 func TestGmq_DeleteAgo(t *testing.T) {
-	broker := getTestBroker(t)
+	broker := getTestBrokerRedis(t)
 	// 设置仿真时钟
 	now := time.Now()
 	broker.SetClock(gmq.NewSimulatedClock(now))
@@ -289,7 +339,8 @@ func TestGmq_DeleteAgo(t *testing.T) {
 	}
 
 	// 检查队列消息是否成功删除
-	broker.DeleteAgo(ctx, testQueueName, int64(time.Now().Second()))
+
+	broker.DeleteAgo(ctx, testQueueName, time.Second)
 	count, err := rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
 	require.NoError(t, err)
 	require.Equal(t, 0, int(count))
@@ -298,7 +349,7 @@ func TestGmq_DeleteAgo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, int(count))
 
-	err = broker.DeleteAgo(ctx, slowQueueName, int64(time.Now().Second()))
+	err = broker.DeleteAgo(ctx, slowQueueName, time.Second)
 	require.NoError(t, err)
 
 	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, slowQueueName)).Result()
@@ -322,7 +373,7 @@ func TestGmq_DeleteAgo(t *testing.T) {
 	require.Equal(t, 1, len(ret))
 
 	broker.SetClock(gmq.NewSimulatedClock(time.Now().Add(time.Second)))
-	err = broker.DeleteAgo(ctx, testQueueName, int64(time.Second))
+	err = broker.DeleteAgo(ctx, testQueueName, time.Second)
 	require.NoError(t, err)
 
 	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
@@ -332,7 +383,7 @@ func TestGmq_DeleteAgo(t *testing.T) {
 	ret, err = rdb.Keys(ctx, msgPattern(testQueueName)).Result()
 	require.NoError(t, err)
 	require.Equal(t, 0, len(ret))
-	err = broker.DeleteAgo(ctx, testQueueName, int64(time.Second))
+	err = broker.DeleteAgo(ctx, testQueueName, time.Second)
 	require.NoError(t, err)
 }
 
@@ -417,7 +468,7 @@ func TestGetStatsWeekly(t *testing.T) {
 	defer cancel()
 	lastRecord := 15
 	now := time.Now().AddDate(0, 0, -lastRecord)
-	broker := getTestBroker(t)
+	broker := getTestBrokerRedis(t)
 	rdb := getTestRedisClient(t)
 	broker.SetClock(gmq.NewSimulatedClock(now))
 	var err error
@@ -437,7 +488,7 @@ func TestGetStatsWeekly(t *testing.T) {
 			msgProcessed[i] = int64(rand.Intn(1000))
 			_, err = rdb.Set(ctx, gmq.NewKeyDailyStatFailed(gmq.Namespace, queue, gtime.UnixTime2YyyymmddUtc(now.Unix())), msgFailed[i], 0).Result()
 			require.NoError(t, err)
-			_, err = rdb.Set(ctx, gmq.NewKeyDailyStatProcessed(gmq.Namespace, queue, gtime.UnixTime2YyyymmddUtc(now.Unix())), msgProcessed[i], 0).Result()
+			_, err = rdb.Set(ctx, gmq.NewKeyDailyStatCompleted(gmq.Namespace, queue, gtime.UnixTime2YyyymmddUtc(now.Unix())), msgProcessed[i], 0).Result()
 			require.NoError(t, err)
 			i++
 		}
@@ -471,4 +522,8 @@ func TestGetStatsWeekly(t *testing.T) {
 		}
 	}
 
+}
+
+func msgPattern(qname string) string {
+	return gmq.Namespace + ":" + qname + ":msg:*"
 }

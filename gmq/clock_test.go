@@ -9,7 +9,7 @@ import (
 	"github.com/giant-stone/gmq/gmq"
 )
 
-func TestSimulatedClock(t *testing.T) {
+func TestGmq_NewSimulatedClock(t *testing.T) {
 	now := time.Now()
 
 	samples := []struct {

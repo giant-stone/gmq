@@ -120,7 +120,7 @@ func (it *Scheduler) Unregister(jobId string) (err error) {
 
 func (it *Scheduler) Run() (err error) {
 	it.cron.Start()
-	return
+	return nil
 }
 
 func (it *Scheduler) Shutdown() {

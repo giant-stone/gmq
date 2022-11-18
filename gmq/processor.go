@@ -83,7 +83,6 @@ func (it *Processor) start() {
 
 func (it *Processor) exec() {
 	select {
-	// TBD.
 	case it.sema <- struct{}{}:
 		{
 			go func() {
