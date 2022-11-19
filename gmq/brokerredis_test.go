@@ -125,8 +125,8 @@ func TestGmq_PauseAndResume(t *testing.T) {
 	// wait for a while
 	time.Sleep(time.Second)
 	// pause and resume invalid queue
-	require.ErrorIs(t, srv.Pause("queueNotExist"), gmq.ErrInvalidQueue)
-	require.ErrorIs(t, srv.Resume("queueNotExist"), gmq.ErrInvalidQueue)
+	require.NoError(t, srv.Pause("queueNotExist"))
+	require.NoError(t, srv.Resume("queueNotExist"))
 
 	// pause and resume correctly
 	time.Sleep(time.Millisecond * 500)
@@ -179,7 +179,7 @@ func TestGmq_PauseAndResume(t *testing.T) {
 
 }
 
-func TestGmq_Fail(t *testing.T) {
+func TestBrokerRedis_Fail(t *testing.T) {
 	broker := getTestBrokerRedis(t)
 	rdb := getTestRedisClient(t)
 	defer broker.Close()
@@ -259,11 +259,13 @@ func TestGmq_Fail(t *testing.T) {
 		state, err := rdb.HGet(ctx, msgs[i], "state").Result()
 		require.NoError(t, err)
 		require.Equal(t, "failed", state)
-		dieat, err := rdb.HGet(ctx, msgs[i], "dieat").Result()
+
+		dieat, err := rdb.HGet(ctx, msgs[i], "updated").Result()
+		require.NoError(t, err)
 		require.NotEqual(t, "", dieat)
-		processedat, err := rdb.HGet(ctx, msgs[i], "processedat").Result()
-		require.NotEqual(t, "", processedat)
+
 		errMsg, err := rdb.HGet(ctx, msgs[i], "err").Result()
+		require.NoError(t, err)
 		require.Equal(t, errFail.Error(), errMsg)
 	}
 }
