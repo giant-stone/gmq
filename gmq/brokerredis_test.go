@@ -140,7 +140,7 @@ func TestGmq_PauseAndResume(t *testing.T) {
 	date := gtime.UnixTime2YyyymmddUtc(time.Now().Unix())
 	dailyStats, err := broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.Pause")
-	ProcessedBeforePause := dailyStats.Processed
+	ProcessedBeforePause := dailyStats.Completed
 	FailedBeforePause := dailyStats.Failed
 
 	// repeated operation for pause
@@ -151,7 +151,7 @@ func TestGmq_PauseAndResume(t *testing.T) {
 	time.Sleep(time.Millisecond * 1000)
 	dailyStats, err = broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.Resume")
-	ProcessedAfterPause := dailyStats.Processed
+	ProcessedAfterPause := dailyStats.Completed
 	FailedAfterPause := dailyStats.Failed
 
 	require.Zero(t, ProcessedAfterPause-(ProcessedBeforePause),
@@ -170,7 +170,7 @@ func TestGmq_PauseAndResume(t *testing.T) {
 	time.Sleep(time.Millisecond * 1000)
 	dailyStats, err = broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.Resume")
-	ProcessedAfterResume := dailyStats.Processed
+	ProcessedAfterResume := dailyStats.Completed
 	FailedAfterResume := dailyStats.Failed
 	require.NotZero(t, ProcessedAfterResume-ProcessedAfterPause,
 		fmt.Sprintf("srv.Resume ProcessedAfterResume: %d, ProcessedAfterPause: %d", ProcessedAfterResume, ProcessedAfterPause))
@@ -243,7 +243,7 @@ func TestGmq_Fail(t *testing.T) {
 	date := gtime.UnixTime2YyyymmddUtc(time.Now().Unix())
 	dailyStats, err := broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.GetStatsByDate")
-	ProcessedAfterPause := dailyStats.Processed
+	ProcessedAfterPause := dailyStats.Completed
 	FailedAfterPause := dailyStats.Failed
 
 	require.Zero(t, ProcessedAfterPause-int64(countProcessed), "Processed Queue Msg Records")
@@ -510,7 +510,7 @@ func TestGetStatsWeekly(t *testing.T) {
 		require.NoError(t, err)
 		info := fmt.Sprintf("brokder.GetStatsWeekly date: %s", gtime.UnixTime2YyyymmddUtc(now.Unix()))
 
-		require.Equal(t, sumProcessed, totalInfo.Processed, info)
+		require.Equal(t, sumProcessed, totalInfo.Completed, info)
 		require.Equal(t, sumFailed, totalInfo.Failed, info)
 
 		// iter

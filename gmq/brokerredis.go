@@ -2,6 +2,7 @@ package gmq
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/giant-stone/go/glogging"
@@ -15,6 +16,60 @@ const (
 	LuaReturnCodeSucc = iota // confirm to POSIX shell/C return code common rule, 0 means successfully
 	LuaReturnCodeError
 )
+
+func NewKeyQueueList() string {
+	return fmt.Sprintf("%s:%s", Namespace, QueueNameList)
+}
+
+func NewKeyQueuePending(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStatePending)
+}
+
+func NewKeyMsgDetail(ns, queueName, msgId string) string {
+	return fmt.Sprintf("%s:%s:msg:%s", ns, queueName, msgId)
+}
+
+func NewKeyMsgUnique(ns, queueName, msgId string) string {
+	return fmt.Sprintf("%s:%s:uniq:%s", ns, queueName, msgId)
+}
+
+func NewKeyQueuePaused(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, QueueNamePaused)
+}
+
+func NewKeyQueueProcessing(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateProcessing)
+}
+
+func NewKeyQueueWaiting(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateWaiting)
+}
+
+func NewKeyQueueCompleted(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateCompleted)
+}
+
+func NewKeyQueueFailed(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateFailed)
+}
+
+// gmq:<queueName>:completed:<YYYY-MM-DD>
+func NewKeyDailyStatCompleted(ns, queueName, YYYYMMDD string) string {
+	return fmt.Sprintf("%s:%s", NewKeyQueueCompleted(ns, queueName), YYYYMMDD)
+}
+
+// gmq:<queueName>:failed:<YYYY-MM-DD>
+func NewKeyDailyStatFailed(ns, queueName, YYYYMMDD string) string {
+	return fmt.Sprintf("%s:%s", NewKeyQueueFailed(ns, queueName), YYYYMMDD)
+}
+
+func NewKeyQueueState(ns, queueName string, state string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, state)
+}
+
+func NewKeyQueuePattern(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:*", ns, queueName)
+}
 
 func NewBrokerRedis(dsn string) (rs Broker, err error) {
 	opts, err := redis.ParseURL(dsn)
@@ -225,7 +280,7 @@ if redis.call("EXISTS", KEYS[2]) == 0 then
 	if id then
 		local key = ARGV[1] .. id
 		redis.call("HSET", key, "state", "processing")
-		redis.call("HSET", key, "processedat", ARGV[2])
+		redis.call("HSET", key, "updated", ARGV[2])
 		return {id, redis.call("HGETALL", key)}
 	end
 end
@@ -288,7 +343,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	payload, _ := values["payload"].(string)
 	state, _ := values["state"].(string)
 	created, _ := values["created"].(string)
-	processedat, _ := values["processedat"].(string)
+	updated, _ := values["updated"].(string)
 	expiredat, _ := values["expiredat"].(string)
 
 	return &Msg{
@@ -298,7 +353,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 		State:     state,
 		Created:   gstr.Atoi64(created),
 		Expiredat: gstr.Atoi64(expiredat),
-		Updated:   gstr.Atoi64(processedat),
+		Updated:   gstr.Atoi64(updated),
 	}, nil
 }
 
@@ -599,8 +654,9 @@ type QueueStat struct {
 	Name       string
 	Total      int64 // all state of message store in Redis
 	Pending    int64 // wait to free worker consume it
-	Waiting    int64
+	Waiting    int64 // worker already took and wait for consuming rate restrict
 	Processing int64 // worker already took and consuming
+	Completed  int64 // consumed successfully
 	Failed     int64 // occured error, and/or pending to retry
 }
 
@@ -623,7 +679,7 @@ func (it *BrokerRedis) listQueues(ctx context.Context) (rs []string, err error) 
 type MonitorInfo struct {
 	Period         int
 	TotalFailed    int
-	TotalProcessed int
+	TotalCompleted int
 	Total          int
 }
 
@@ -638,6 +694,7 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 		pending, _ := it.cli.LLen(ctx, NewKeyQueuePending(it.namespace, queueName)).Result()
 		waiting, _ := it.cli.LLen(ctx, NewKeyQueueWaiting(it.namespace, queueName)).Result()
 		processing, _ := it.cli.LLen(ctx, NewKeyQueueProcessing(it.namespace, queueName)).Result()
+		completed, _ := it.cli.LLen(ctx, NewKeyQueueCompleted(it.namespace, queueName)).Result()
 		failed, _ := it.cli.LLen(ctx, NewKeyQueueFailed(it.namespace, queueName)).Result()
 		total := pending + waiting + processing + failed
 
@@ -647,6 +704,7 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 			Pending:    pending,
 			Waiting:    waiting,
 			Processing: processing,
+			Completed:  completed,
 			Failed:     failed,
 		})
 	}
@@ -655,7 +713,7 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 
 type QueueDailyStat struct {
 	Date      string // YYYY-MM-DD in UTC
-	Processed int64
+	Completed int64
 	Failed    int64
 }
 
@@ -670,7 +728,7 @@ func (it *BrokerRedis) GetStatsWeekly(ctx context.Context) (*[]QueueDailyStat, *
 			return nil, nil, ErrInternal
 		}
 		(*rss) = append((*rss), *rs)
-		total.Processed += rs.Processed
+		total.Completed += rs.Completed
 		total.Failed += rs.Failed
 		date = date.AddDate(0, 0, 1)
 	}
@@ -685,13 +743,13 @@ func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *Que
 
 	rs = &QueueDailyStat{Date: date}
 	for _, queueName := range queueNames {
-		processed, _ := it.cli.Get(ctx, NewKeyDailyStatCompleted(it.namespace, queueName, date)).Result()
+		completed, _ := it.cli.Get(ctx, NewKeyDailyStatCompleted(it.namespace, queueName, date)).Result()
 		failed, _ := it.cli.Get(ctx, NewKeyDailyStatFailed(it.namespace, queueName, date)).Result()
 
-		if processed != "" {
-			value := gstr.Atoi64(processed)
+		if completed != "" {
+			value := gstr.Atoi64(completed)
 			if value > 0 {
-				rs.Processed += value
+				rs.Completed += value
 			}
 		}
 

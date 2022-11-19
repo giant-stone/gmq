@@ -171,9 +171,9 @@ func printStatsWeekly(ctx context.Context, broker gmq.Broker) {
 		gtime.UnixTime2YyyymmddUtc(now.AddDate(0, 0, -7).Unix()),
 		gtime.UnixTime2YyyymmddUtc(now.Unix()))
 	for i := range *dayInfo {
-		fmt.Printf("date:%s processed: %d, failed: %d, total: %d \n", (*dayInfo)[i].Date, (*dayInfo)[i].Processed, (*dayInfo)[i].Failed, (*dayInfo)[i].Processed+(*dayInfo)[i].Failed)
+		fmt.Printf("date:%s processed: %d, failed: %d, total: %d \n", (*dayInfo)[i].Date, (*dayInfo)[i].Completed, (*dayInfo)[i].Failed, (*dayInfo)[i].Completed+(*dayInfo)[i].Failed)
 	}
-	fmt.Printf("Total processed: %d, Total failed: %d, total: %d \n", totalInfo.Processed, totalInfo.Failed, totalInfo.Processed+totalInfo.Failed)
+	fmt.Printf("Total processed: %d, Total failed: %d, total: %d \n", totalInfo.Completed, totalInfo.Failed, totalInfo.Completed+totalInfo.Failed)
 }
 
 func getMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
