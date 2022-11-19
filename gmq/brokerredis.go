@@ -717,22 +717,18 @@ type QueueDailyStat struct {
 	Failed    int64
 }
 
-func (it *BrokerRedis) GetStatsWeekly(ctx context.Context) (*[]QueueDailyStat, *QueueDailyStat, error) {
-
-	rss := new([]QueueDailyStat)
+func (it *BrokerRedis) GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, error) {
+	rs := make([]*QueueDailyStat, 0)
 	date := it.clock.Now().AddDate(0, 0, -7)
-	total := &QueueDailyStat{}
 	for i := 0; i <= 7; i++ {
-		rs, err := it.GetStatsByDate(ctx, gtime.UnixTime2YyyymmddUtc(date.Unix()))
+		rsOneDay, err := it.GetStatsByDate(ctx, gtime.UnixTime2YyyymmddUtc(date.Unix()))
 		if err != nil {
-			return nil, nil, ErrInternal
+			return nil, ErrInternal
 		}
-		(*rss) = append((*rss), *rs)
-		total.Completed += rs.Completed
-		total.Failed += rs.Failed
+		rs = append(rs, rsOneDay)
 		date = date.AddDate(0, 0, 1)
 	}
-	return rss, total, nil
+	return rs, nil
 }
 
 func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *QueueDailyStat, err error) {

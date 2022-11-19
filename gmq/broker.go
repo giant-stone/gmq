@@ -33,7 +33,7 @@ type Broker interface {
 
 	Ping(ctx context.Context) error
 	GetStatsByDate(ctx context.Context, YYYYMMDD string) (*QueueDailyStat, error)
-	GetStatsWeekly(ctx context.Context) (*[]QueueDailyStat, *QueueDailyStat, error)
+	GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, error)
 	Pause(ctx context.Context, Queuename string) error
 	Resume(ctx context.Context, Queuename string) error
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/giant-stone/gmq/gmq"
 	"github.com/giant-stone/go/grand"
+	"github.com/giant-stone/go/gtime"
 )
 
 var (
@@ -274,4 +275,134 @@ func TestBrokerInMemory_Fail(t *testing.T) {
 
 	_, err = broker.Dequeue(ctx, msgWant.GetQueue())
 	require.ErrorIs(t, err, gmq.ErrNoMsg)
+}
+
+func TestBrokerInMemory_GetStats(t *testing.T) {
+	broker := getTestBrokerInMemory(t)
+	defer broker.Close()
+
+	msgWant := generateNewMsg()
+	ctx := context.Background()
+	var err error
+
+	_, err = broker.Enqueue(ctx, msgWant)
+	require.NoError(t, err)
+
+	rs, err := broker.GetStats(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rs))
+	stat := rs[0]
+	require.Equal(t, int64(1), stat.Pending)
+	require.Zero(t, stat.Waiting)
+	require.Zero(t, stat.Processing)
+	require.Zero(t, stat.Completed)
+	require.Zero(t, stat.Failed)
+	require.Equal(t, int64(1), stat.Total)
+
+	msgGot, err := broker.GetMsg(ctx, msgWant.GetQueue(), msgWant.GetId())
+	require.NoError(t, err)
+
+	rs, err = broker.GetStats(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rs))
+	stat = rs[0]
+	require.Equal(t, int64(1), stat.Pending)
+	require.Zero(t, stat.Waiting)
+	require.Zero(t, stat.Processing)
+	require.Zero(t, stat.Completed)
+	require.Zero(t, stat.Failed)
+	require.Equal(t, int64(1), stat.Total)
+
+	_, err = broker.Dequeue(ctx, msgWant.GetQueue())
+	require.NoError(t, err)
+
+	rs, err = broker.GetStats(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rs))
+	stat = rs[0]
+	require.Zero(t, stat.Pending)
+	require.Zero(t, stat.Waiting)
+	require.Equal(t, int64(1), stat.Processing)
+	require.Zero(t, stat.Completed)
+	require.Zero(t, stat.Failed)
+	require.Equal(t, int64(1), stat.Total)
+
+	_, err = broker.GetMsg(ctx, msgWant.GetQueue(), msgWant.GetId())
+	require.NoError(t, err)
+
+	rs, err = broker.GetStats(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rs))
+	stat = rs[0]
+	require.Zero(t, stat.Pending)
+	require.Zero(t, stat.Waiting)
+	require.Equal(t, int64(1), stat.Processing)
+	require.Zero(t, stat.Completed)
+	require.Zero(t, stat.Failed)
+	require.Equal(t, int64(1), stat.Total)
+
+	err = broker.Complete(ctx, msgGot)
+	require.NoError(t, err)
+
+	rs, err = broker.GetStats(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rs))
+	stat = rs[0]
+	require.Zero(t, stat.Pending)
+	require.Zero(t, stat.Waiting)
+	require.Zero(t, stat.Processing)
+	require.Equal(t, int64(1), stat.Completed)
+	require.Zero(t, stat.Failed)
+	require.Equal(t, int64(1), stat.Total)
+
+	_, err = broker.GetMsg(ctx, msgWant.GetQueue(), msgWant.GetId())
+	require.NoError(t, err)
+
+	rs, err = broker.GetStats(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rs))
+	stat = rs[0]
+	require.Zero(t, stat.Pending)
+	require.Zero(t, stat.Waiting)
+	require.Zero(t, stat.Processing)
+	require.Equal(t, int64(1), stat.Completed)
+	require.Zero(t, stat.Failed)
+	require.Equal(t, int64(1), stat.Total)
+}
+
+func TestBrokerInMemory_GetStatsByDate(t *testing.T) {
+	broker := getTestBrokerInMemory(t)
+	defer broker.Close()
+
+	msgWant := generateNewMsg()
+	ctx := context.Background()
+	var err error
+
+	_, err = broker.Enqueue(ctx, msgWant)
+	require.NoError(t, err)
+
+	todayYYYYMMDD := gtime.UnixTime2YyyymmddUtc(time.Now().Unix())
+	rs, err := broker.GetStatsByDate(ctx, todayYYYYMMDD)
+	require.NoError(t, err)
+	require.Equal(t, todayYYYYMMDD, rs.Date)
+	require.Zero(t, rs.Completed)
+	require.Zero(t, rs.Failed)
+
+	_, err = broker.Dequeue(ctx, msgWant.GetQueue())
+	require.NoError(t, err)
+
+	rs, err = broker.GetStatsByDate(ctx, todayYYYYMMDD)
+	require.NoError(t, err)
+	require.Equal(t, todayYYYYMMDD, rs.Date)
+	require.Zero(t, rs.Completed)
+	require.Zero(t, rs.Failed)
+
+	err = broker.Complete(ctx, msgWant)
+	require.NoError(t, err)
+
+	rs, err = broker.GetStatsByDate(ctx, todayYYYYMMDD)
+	require.NoError(t, err)
+	require.Equal(t, todayYYYYMMDD, rs.Date)
+	require.Equal(t, int64(1), rs.Completed)
+	require.Zero(t, rs.Failed)
 }

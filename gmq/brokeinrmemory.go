@@ -482,7 +482,7 @@ func (it *BrokerInMemory) GetStatsByDate(ctx context.Context, YYYYMMDD string) (
 	today := it.clock.Now()
 	todayYYYYMMDD := today.Format("2006-01-02")
 
-	rs := &QueueDailyStat{}
+	rs := &QueueDailyStat{Date: todayYYYYMMDD}
 	for _, queueName := range it.listQueues() {
 		if l, ok := it.listStat[queueName]; ok {
 			for e := l.Back(); e != nil; e = e.Prev() {
@@ -507,8 +507,18 @@ func (it *BrokerInMemory) GetStatsByDate(ctx context.Context, YYYYMMDD string) (
 }
 
 // GetStatsWeekly implements Broker
-func (it *BrokerInMemory) GetStatsWeekly(ctx context.Context) (*[]QueueDailyStat, *QueueDailyStat, error) {
-	panic("unimplemented")
+func (it *BrokerInMemory) GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, error) {
+	rs := make([]*QueueDailyStat, 0)
+	date := it.clock.Now().AddDate(0, 0, -7)
+	for i := 0; i <= 7; i++ {
+		rsOneDay, err := it.GetStatsByDate(ctx, gtime.UnixTime2YyyymmddUtc(date.Unix()))
+		if err != nil {
+			return nil, ErrInternal
+		}
+		rs = append(rs, rsOneDay)
+		date = date.AddDate(0, 0, 1)
+	}
+	return rs, nil
 }
 
 // Init implements Broker

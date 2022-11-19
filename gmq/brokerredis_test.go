@@ -463,7 +463,7 @@ func addMsgAtFailed(t *testing.T, ctx context.Context, cli *redis.Client, msg gm
 	require.NotEqual(t, gmq.LuaReturnCodeError, rt)
 }
 
-func TestGetStatsWeekly(t *testing.T) {
+func TestBrokerRedis_GetStatsWeekly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	lastRecord := 15
@@ -506,12 +506,19 @@ func TestGetStatsWeekly(t *testing.T) {
 	for j := 0; j < lastRecord-periods; j++ {
 		now := time.Now().AddDate(0, 0, periods-lastRecord+j)
 		broker.SetClock(gmq.NewSimulatedClock(now))
-		_, totalInfo, err := broker.GetStatsWeekly(ctx)
+		rsStat, err := broker.GetStatsWeekly(ctx)
 		require.NoError(t, err)
 		info := fmt.Sprintf("brokder.GetStatsWeekly date: %s", gtime.UnixTime2YyyymmddUtc(now.Unix()))
 
-		require.Equal(t, sumProcessed, totalInfo.Completed, info)
-		require.Equal(t, sumFailed, totalInfo.Failed, info)
+		totalCompleted := int64(0)
+		totalFailed := int64(0)
+		for _, item := range rsStat {
+			totalCompleted += item.Completed
+			totalFailed += item.Failed
+		}
+
+		require.Equal(t, sumProcessed, totalCompleted, info)
+		require.Equal(t, sumFailed, totalFailed, info)
 
 		// iter
 		for idx := range queueList {
