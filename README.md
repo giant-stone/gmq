@@ -71,7 +71,7 @@ func main() {
 	mux := gmq.NewMux()
 
 	// 用一个子协程模拟实现消息队列生产者
-	cli, err := gmq.NewClient(dsn)
+	cli, err := gmq.NewClientRedis(dsn)
 	gutil.ExitOnErr(err)
 	go func() {
 		for {

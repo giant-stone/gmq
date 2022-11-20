@@ -831,3 +831,12 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 	}
 	return errFail
 }
+
+func NewClientRedis(dsn string) (rs *Client, err error) {
+	broker, err := NewBrokerRedis(dsn)
+	if err != nil {
+		return
+	}
+
+	return &Client{broker: broker}, nil
+}
