@@ -29,8 +29,6 @@ type BrokerInMemory struct {
 
 	listStat map[string]*list.List // key is queueName, list.Element value is *QueueDailyStat
 
-	msgIdUniq map[string]struct{} // key is msgId
-
 	msgDetail map[string]*Msg // key is msgId
 
 	maxBytes int64
@@ -54,7 +52,6 @@ func (it *BrokerInMemory) Close() error {
 	it.listFailed = nil
 	it.listStat = nil
 
-	it.msgIdUniq = nil
 	it.msgDetail = nil
 
 	it.queuesPaused = nil
@@ -146,6 +143,9 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 			for e := l.Front(); e != nil; e = e.Next() {
 				msgId := e.Value.(string)
 				rawMsg := it.msgDetail[msgId]
+
+				fmt.Println(msgId, time.UnixMilli(rawMsg.Created), time.UnixMilli(rawMsg.Expiredat))
+
 				if rawMsg.Expiredat > 0 && rawMsg.Expiredat > nowInMs {
 					continue
 				} else if rawMsg.Expiredat == 0 {
@@ -156,7 +156,6 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 				}
 
 				removeElementFromList(l, msgId)
-				delete(it.msgIdUniq, msgId)
 				delete(it.msgDetail, msgId)
 			}
 		}
@@ -192,7 +191,6 @@ func (it *BrokerInMemory) DeleteMsg(ctx context.Context, queueName string, id st
 		removeElementFromList(l, msgId)
 	}
 
-	delete(it.msgIdUniq, msgId)
 	delete(it.msgDetail, msgId)
 
 	return nil
@@ -224,7 +222,6 @@ func (it *BrokerInMemory) DeleteQueue(ctx context.Context, queueName string) err
 				msgId := e.Value.(string)
 
 				removeElementFromList(l, msgId)
-				delete(it.msgIdUniq, msgId)
 				delete(it.msgDetail, msgId)
 
 				delete(stateList, queueName)
@@ -315,17 +312,6 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	nowInMs := now.UnixMilli()
 	msgId := newMsgId(queueName, id)
 
-	var expiredAt int64
-	if uniqueInMs == 0 {
-		expiredAt = 0
-	} else {
-		expiredAt = now.Add(time.Millisecond * time.Duration(nowInMs)).UnixMilli()
-	}
-
-	if _, dup := it.msgIdUniq[msgId]; dup {
-		return nil, ErrMsgIdConflict
-	}
-
 	if msg, ok := it.msgDetail[msgId]; ok {
 		if msg.Expiredat > nowInMs {
 			return nil, ErrMsgIdConflict
@@ -334,6 +320,11 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 
 	l := it.listPending[queueName]
 	l.PushBack(msgId)
+
+	var expiredAt int64
+	if uniqueInMs > 0 {
+		expiredAt = now.Add(time.Millisecond * time.Duration(uniqueInMs)).UnixMilli()
+	}
 
 	rawMsg := &Msg{
 		Created:   nowInMs,
@@ -344,7 +335,6 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 		State:     MsgStatePending,
 		Updated:   nowInMs,
 	}
-	it.msgIdUniq[msgId] = struct{}{}
 	it.msgDetail[msgId] = rawMsg
 
 	return rawMsg, nil
@@ -645,7 +635,6 @@ func NewBrokerInMemory(opts *BrokerInMemoryOpts) (rs Broker, err error) {
 		listFailed:     make(map[string]*list.List),
 		listStat:       make(map[string]*list.List),
 		queuesPaused:   make(map[string]struct{}),
-		msgIdUniq:      make(map[string]struct{}),
 		msgDetail:      make(map[string]*Msg),
 		maxBytes:       DefaultMaxBytes,
 	}

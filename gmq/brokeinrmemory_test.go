@@ -227,16 +227,17 @@ func TestBrokerInMemory_Complete(t *testing.T) {
 	msgGotCompleted, err := broker.GetMsg(ctx, msgWant.GetQueue(), msgWant.GetId())
 	require.NoError(t, err)
 
-	now := time.Now().Unix()
+	now := time.Now()
+	nowInUnix := now.Unix()
 
 	require.Equal(t, msgWant.GetId(), msgGotCompleted.Id)
 	require.Equal(t, msgWant.GetQueue(), msgGotCompleted.Queue)
 	require.Equal(t, msgWant.GetPayload(), msgGotCompleted.GetPayload())
 	require.Equal(t, gmq.MsgStateCompleted, msgGotCompleted.State)
-	require.Equal(t, now, time.UnixMilli(msgGotCompleted.Created).Unix())
+	require.Equal(t, nowInUnix, time.UnixMilli(msgGotCompleted.Created).Unix())
 	require.Equal(t, msgGotCompleted.Expiredat, int64(0))
 	require.Equal(t, msgGotCompleted.Err, "")
-	require.Equal(t, now, time.UnixMilli(msgGotCompleted.Updated).Unix())
+	require.Equal(t, nowInUnix, time.UnixMilli(msgGotCompleted.Updated).Unix())
 
 	_, err = broker.Dequeue(ctx, msgWant.GetQueue())
 	require.ErrorIs(t, err, gmq.ErrNoMsg)
