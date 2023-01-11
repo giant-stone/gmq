@@ -2,9 +2,9 @@ package gmq
 
 import (
 	"context"
+	"fmt"
 	"time"
 
-	"github.com/giant-stone/go/glogging"
 	"github.com/giant-stone/go/gstr"
 	"github.com/giant-stone/go/gtime"
 	"github.com/go-redis/redis/v8"
@@ -15,6 +15,60 @@ const (
 	LuaReturnCodeSucc = iota // confirm to POSIX shell/C return code common rule, 0 means successfully
 	LuaReturnCodeError
 )
+
+func NewKeyQueueList() string {
+	return fmt.Sprintf("%s:%s", Namespace, QueueNameList)
+}
+
+func NewKeyQueuePending(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStatePending)
+}
+
+func NewKeyMsgDetail(ns, queueName, msgId string) string {
+	return fmt.Sprintf("%s:%s:msg:%s", ns, queueName, msgId)
+}
+
+func NewKeyMsgUnique(ns, queueName, msgId string) string {
+	return fmt.Sprintf("%s:%s:uniq:%s", ns, queueName, msgId)
+}
+
+func NewKeyQueuePaused(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, QueueNamePaused)
+}
+
+func NewKeyQueueProcessing(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateProcessing)
+}
+
+func NewKeyQueueWaiting(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateWaiting)
+}
+
+func NewKeyQueueCompleted(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateCompleted)
+}
+
+func NewKeyQueueFailed(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateFailed)
+}
+
+// gmq:<queueName>:completed:<YYYY-MM-DD>
+func NewKeyDailyStatCompleted(ns, queueName, YYYYMMDD string) string {
+	return fmt.Sprintf("%s:%s", NewKeyQueueCompleted(ns, queueName), YYYYMMDD)
+}
+
+// gmq:<queueName>:failed:<YYYY-MM-DD>
+func NewKeyDailyStatFailed(ns, queueName, YYYYMMDD string) string {
+	return fmt.Sprintf("%s:%s", NewKeyQueueFailed(ns, queueName), YYYYMMDD)
+}
+
+func NewKeyQueueState(ns, queueName string, state string) string {
+	return fmt.Sprintf("%s:%s:%s", ns, queueName, state)
+}
+
+func NewKeyQueuePattern(ns, queueName string) string {
+	return fmt.Sprintf("%s:%s:*", ns, queueName)
+}
 
 func NewBrokerRedis(dsn string) (rs Broker, err error) {
 	opts, err := redis.ParseURL(dsn)
@@ -35,6 +89,8 @@ func MakeRedisUniversalClient(opts *redis.Options) (rs interface{}) {
 }
 
 type BrokerRedis struct {
+	BrokerUnimplemented
+
 	cli       redis.UniversalClient
 	clock     Clock
 	namespace string
@@ -147,14 +203,16 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 
 	it.updateQueueList(ctx, queueName)
 
-	now := it.clock.Now().UnixMilli()
+	now := it.clock.Now()
+	nowInMs := now.UnixMilli()
+	var expiredAt int64
 	var resI interface{}
 	if uniqueInMs == 0 {
 		keys := []string{NewKeyMsgDetail(it.namespace, queueName, msgId), NewKeyQueuePending(it.namespace, queueName)}
 		args := []interface{}{
 			payload,
 			MsgStatePending,
-			now,
+			nowInMs,
 			msgId,
 		}
 		resI, err = scriptEnqueue.Run(ctx, it.cli, keys, args...).Result()
@@ -168,10 +226,14 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 			uniqueInMs,
 			payload,
 			MsgStatePending,
-			now,
+			nowInMs,
 			msgId,
 		}
 		resI, err = scriptEnqueueUnique.Run(ctx, it.cli, keys, args...).Result()
+	}
+
+	if uniqueInMs > 0 {
+		expiredAt = now.Add(time.Millisecond * time.Duration(uniqueInMs)).UnixMilli()
 	}
 
 	if err != nil {
@@ -190,11 +252,12 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 	}
 
 	return &Msg{
-		Created: now,
-		Id:      msgId,
-		Payload: payload,
-		Queue:   queueName,
-		State:   MsgStatePending,
+		Created:   nowInMs,
+		Expiredat: expiredAt,
+		Id:        msgId,
+		Payload:   payload,
+		Queue:     queueName,
+		State:     MsgStatePending,
 	}, nil
 }
 
@@ -216,7 +279,7 @@ if redis.call("EXISTS", KEYS[2]) == 0 then
 	if id then
 		local key = ARGV[1] .. id
 		redis.call("HSET", key, "state", "processing")
-		redis.call("HSET", key, "processedat", ARGV[2])
+		redis.call("HSET", key, "updated", ARGV[2])
 		return {id, redis.call("HGETALL", key)}
 	end
 end
@@ -279,15 +342,17 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	payload, _ := values["payload"].(string)
 	state, _ := values["state"].(string)
 	created, _ := values["created"].(string)
-	processedat, _ := values["processedat"].(string)
+	updated, _ := values["updated"].(string)
+	expiredat, _ := values["expiredat"].(string)
 
 	return &Msg{
-		Payload:     []byte(payload),
-		Id:          msgId,
-		Queue:       queueName,
-		State:       state,
-		Created:     gstr.Atoi64(created),
-		Processedat: gstr.Atoi64(processedat),
+		Payload:   []byte(payload),
+		Id:        msgId,
+		Queue:     queueName,
+		State:     state,
+		Created:   gstr.Atoi64(created),
+		Expiredat: gstr.Atoi64(expiredat),
+		Updated:   gstr.Atoi64(updated),
 	}, nil
 }
 
@@ -327,9 +392,10 @@ func (it *BrokerRedis) DeleteQueue(ctx context.Context, queueName string) (err e
 // KEYS[1] -> gmq:<queueName>:pending
 // KEYS[2] -> gmq:<queueName>:processing
 // KEYS[3] -> gmq:<queueName>:waiting
-// KEYS[4] -> gmq:<queueName>:failed
-// KEYS[5] -> gmq:<queueName>:msg:<msgId>
-// KEYS[6] -> gmq:<queueName>:uniq:<msgId>
+// KEYS[4] -> gmq:<queueName>:completed
+// KEYS[5] -> gmq:<queueName>:failed
+// KEYS[6] -> gmq:<queueName>:msg:<msgId>
+// KEYS[7] -> gmq:<queueName>:uniq:<msgId>
 //
 // ARGV[1] -> <msgId>
 var scriptDeleteMsg = redis.NewScript(`
@@ -337,8 +403,9 @@ redis.call("LREM", KEYS[1], 0, ARGV[1])
 redis.call("LREM", KEYS[2], 0, ARGV[1])
 redis.call("LREM", KEYS[3], 0, ARGV[1])
 redis.call("LREM", KEYS[4], 0, ARGV[1])
-redis.call("DEL", KEYS[6])
-if redis.call("DEL", KEYS[5]) == 0 then
+redis.call("LREM", KEYS[5], 0, ARGV[1])
+redis.call("DEL", KEYS[7])
+if redis.call("DEL", KEYS[6]) == 0 then
 	return 1
 else
 	return 0
@@ -350,6 +417,7 @@ func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (
 		NewKeyQueuePending(it.namespace, queueName),
 		NewKeyQueueProcessing(it.namespace, queueName),
 		NewKeyQueueWaiting(it.namespace, queueName),
+		NewKeyQueueCompleted(it.namespace, queueName),
 		NewKeyQueueFailed(it.namespace, queueName),
 		NewKeyMsgDetail(it.namespace, queueName, msgId),
 		NewKeyMsgUnique(it.namespace, queueName, msgId),
@@ -384,29 +452,29 @@ func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (
 
 // scriptDelete delete a message.
 //
-// KEYS[1] -> gmq:<queueName>:processing
-// KEYS[2] -> gmq:<queueName>:failed
+// KEYS[1] -> gmq:<queueName>:failed
+// KEYS[2] -> gmq:<queueName>:processing
 // KEYS[3] -> created
-// KEYS[4:5] ->  MsgId:MsgKeyQueue
+// KEYS[i]   -> <msgId1>
+// KEYS[i+1] -> <keyMsgDetail1>
 // ...
-
+//
 // ARGV[1] -> cutoff
 // ARGV[2] -> Length of KEYS
-
 var scriptCheckAndDelete = redis.NewScript(`
-	for i=4, ARGV[2], 2 do
-	if redis.call("HGET", KEYS[i+1], KEYS[3]) <= ARGV[1] then
-			redis.call("DEL", KEYS[i+1])
-			redis.call("LREM", KEYS[1], 0, KEYS[i])
-			redis.call("LREM", KEYS[2],0, KEYS[i])
-		end
+for i=4, ARGV[2], 2 do
+	if redis.call("HGET", KEYS[i+1], KEYS[3]) >= ARGV[1] then
+		redis.call("DEL", KEYS[i+1])
+		redis.call("LREM", KEYS[1], 0, KEYS[i])
+		redis.call("LREM", KEYS[2], 0, KEYS[i])
 	end
-	return 0
+end
+return 0
 `)
 
 // delete entries old than first entry of pending
-func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, seconds int64) error {
-	cutoff := it.clock.Now().Add(-(time.Second) * time.Duration(seconds)).UnixMilli()
+func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, duration time.Duration) error {
+	cutoff := it.clock.Now().Add(-duration).UnixMilli()
 
 	states := []string{
 		NewKeyQueueFailed(it.namespace, queueName),
@@ -418,19 +486,32 @@ func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, seconds 
 		"created",
 	}
 
+	step := int64(10000)
 	for _, state := range states {
-		tmp, err := it.cli.LRange(ctx, state, 0, -1).Result()
-		if err != nil {
-			return ErrInternal
-		}
+		start := int64(0)
+		stop := step
 
-		for i := range tmp {
-			keys = append(keys, tmp[i], NewKeyMsgDetail(it.namespace, queueName, tmp[i]))
+		for {
+			tmp, err := it.cli.LRange(ctx, state, start, stop).Result()
+			if err != nil {
+				return ErrInternal
+			}
+
+			for i := range tmp {
+				msgId := tmp[i]
+				keys = append(keys, msgId, NewKeyMsgDetail(it.namespace, queueName, msgId))
+			}
+
+			if len(tmp) < int(step) {
+				break
+			}
+
+			start += step
+			stop += step
 		}
 	}
 
 	if len(keys) == 3 {
-		glogging.Sugared.Info("broker.DeleteAgo: nothing to clear")
 		return nil
 	}
 
@@ -453,7 +534,7 @@ func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, seconds 
 //
 // KEYS[1] -> gmq:<queueName>:processing
 // KEYS[2] -> gmq:<queueName>:msg:<msgId>
-// KEYS[3] -> gmq:<queueName>:processed:<YYYY-MM-DD>
+// KEYS[3] -> gmq:<queueName>:completed:<YYYY-MM-DD>
 //
 // ARGV[1] -> <msgId>
 var scriptComplete = redis.NewScript(`
@@ -502,7 +583,7 @@ func (it *BrokerRedis) Complete(ctx context.Context, msg IMsg) (err error) {
 	keys := []string{
 		NewKeyQueueProcessing(it.namespace, queueName),
 		NewKeyMsgDetail(it.namespace, queueName, msgId),
-		NewKeyDailyStatProcessed(it.namespace, queueName, gtime.UnixTime2YyyymmddUtc(it.clock.Now().Unix())),
+		NewKeyDailyStatCompleted(it.namespace, queueName, gtime.UnixTime2YyyymmddUtc(it.clock.Now().Unix())),
 	}
 	args := []interface{}{
 		msgId,
@@ -554,14 +635,13 @@ func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg
 	}
 
 	return &Msg{
-		Payload:     []byte(payload),
-		Id:          msgId,
-		Queue:       queueName,
-		State:       values["state"],
-		Created:     gstr.Atoi64(values["created"]),
-		Processedat: gstr.Atoi64(values["processedat"]),
-		Dieat:       gstr.Atoi64(values["dieat"]),
-		Err:         values["err"],
+		Payload: []byte(payload),
+		Id:      msgId,
+		Queue:   queueName,
+		Created: gstr.Atoi64(values["created"]),
+		Err:     values["err"],
+		State:   values["state"],
+		Updated: gstr.Atoi64(values["updated"]),
 	}, nil
 }
 
@@ -586,8 +666,9 @@ type QueueStat struct {
 	Name       string
 	Total      int64 // all state of message store in Redis
 	Pending    int64 // wait to free worker consume it
-	Waiting    int64
+	Waiting    int64 // worker already took and wait for consuming rate restrict
 	Processing int64 // worker already took and consuming
+	Completed  int64 // consumed successfully
 	Failed     int64 // occured error, and/or pending to retry
 }
 
@@ -610,7 +691,7 @@ func (it *BrokerRedis) listQueues(ctx context.Context) (rs []string, err error) 
 type MonitorInfo struct {
 	Period         int
 	TotalFailed    int
-	TotalProcessed int
+	TotalCompleted int
 	Total          int
 }
 
@@ -625,6 +706,7 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 		pending, _ := it.cli.LLen(ctx, NewKeyQueuePending(it.namespace, queueName)).Result()
 		waiting, _ := it.cli.LLen(ctx, NewKeyQueueWaiting(it.namespace, queueName)).Result()
 		processing, _ := it.cli.LLen(ctx, NewKeyQueueProcessing(it.namespace, queueName)).Result()
+		completed, _ := it.cli.LLen(ctx, NewKeyQueueCompleted(it.namespace, queueName)).Result()
 		failed, _ := it.cli.LLen(ctx, NewKeyQueueFailed(it.namespace, queueName)).Result()
 		total := pending + waiting + processing + failed
 
@@ -634,6 +716,7 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 			Pending:    pending,
 			Waiting:    waiting,
 			Processing: processing,
+			Completed:  completed,
 			Failed:     failed,
 		})
 	}
@@ -642,26 +725,22 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 
 type QueueDailyStat struct {
 	Date      string // YYYY-MM-DD in UTC
-	Processed int64
+	Completed int64
 	Failed    int64
 }
 
-func (it *BrokerRedis) GetStatsWeekly(ctx context.Context) (*[]QueueDailyStat, *QueueDailyStat, error) {
-
-	rss := new([]QueueDailyStat)
+func (it *BrokerRedis) GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, error) {
+	rs := make([]*QueueDailyStat, 0)
 	date := it.clock.Now().AddDate(0, 0, -7)
-	total := &QueueDailyStat{}
 	for i := 0; i <= 7; i++ {
-		rs, err := it.GetStatsByDate(ctx, gtime.UnixTime2YyyymmddUtc(date.Unix()))
+		rsOneDay, err := it.GetStatsByDate(ctx, gtime.UnixTime2YyyymmddUtc(date.Unix()))
 		if err != nil {
-			return nil, nil, ErrInternal
+			return nil, ErrInternal
 		}
-		(*rss) = append((*rss), *rs)
-		total.Processed += rs.Processed
-		total.Failed += rs.Failed
+		rs = append(rs, rsOneDay)
 		date = date.AddDate(0, 0, 1)
 	}
-	return rss, total, nil
+	return rs, nil
 }
 
 func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *QueueDailyStat, err error) {
@@ -672,13 +751,13 @@ func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *Que
 
 	rs = &QueueDailyStat{Date: date}
 	for _, queueName := range queueNames {
-		processed, _ := it.cli.Get(ctx, NewKeyDailyStatProcessed(it.namespace, queueName, date)).Result()
+		completed, _ := it.cli.Get(ctx, NewKeyDailyStatCompleted(it.namespace, queueName, date)).Result()
 		failed, _ := it.cli.Get(ctx, NewKeyDailyStatFailed(it.namespace, queueName, date)).Result()
 
-		if processed != "" {
-			value := gstr.Atoi64(processed)
+		if completed != "" {
+			value := gstr.Atoi64(completed)
 			if value > 0 {
-				rs.Processed += value
+				rs.Completed += value
 			}
 		}
 
@@ -763,4 +842,13 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 		return err
 	}
 	return errFail
+}
+
+func NewClientRedis(dsn string) (rs *Client, err error) {
+	broker, err := NewBrokerRedis(dsn)
+	if err != nil {
+		return
+	}
+
+	return &Client{broker: broker}, nil
 }

@@ -3,35 +3,44 @@ package gmq
 import (
 	"context"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // Cleaner auto-delete dead or failed messages, completed messages at intervals.
 type Cleaner struct {
-	ctx        context.Context
-	broker     Broker
-	logger     Logger
-	queueNames map[string]struct{}
+	broker Broker
+	ctx    context.Context
+	// rate limiter to prevent spamming logs with a bunch of errors.
+	errLogLimiter *rate.Limiter
+	logger        Logger
+	msgMaxTTL     time.Duration
+	queueNames    map[string]struct{}
 }
 
 type CleanerParams struct {
-	Ctx        context.Context
 	Broker     Broker
+	Ctx        context.Context
+	DeleteAgo  time.Duration
 	Logger     Logger
+	MsgMaxTTL  time.Duration
 	QueueNames map[string]struct{}
 }
 
 func NewCleaner(params CleanerParams) *Cleaner {
 	return &Cleaner{
-		ctx:        params.Ctx,
-		broker:     params.Broker,
-		logger:     params.Logger,
-		queueNames: params.QueueNames,
+		broker:        params.Broker,
+		ctx:           params.Ctx,
+		errLogLimiter: rate.NewLimiter(rate.Every(2*time.Second), 1),
+		logger:        params.Logger,
+		msgMaxTTL:     params.MsgMaxTTL,
+		queueNames:    params.QueueNames,
 	}
 }
 
 func (it *Cleaner) start() {
 	go func() {
-		t := time.NewTicker(TTLDeadMsg * time.Second)
+		t := time.NewTicker(it.msgMaxTTL)
 
 		for {
 			select {
@@ -41,10 +50,13 @@ func (it *Cleaner) start() {
 					return
 				}
 			case <-t.C:
-				{ //TBD 是否要对超过一定时间的统计数据进行清理？
+				{
+					//TBD 是否要对超过一定时间的统计数据进行清理？
 					for queueName := range it.queueNames {
-						err := it.broker.DeleteAgo(it.ctx, queueName, TTLMsg)
-						it.logger.Errorf("queue: %s os:server.Clean error(%)", queueName, err)
+						err := it.broker.DeleteAgo(it.ctx, queueName, it.msgMaxTTL)
+						if err != nil && it.errLogLimiter.Allow() {
+							it.logger.Errorf("DeleteAgo %v, queue=%s msgMaxTTL=%d", err, queueName, it.msgMaxTTL)
+						}
 					}
 				}
 			}
