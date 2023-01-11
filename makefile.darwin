@@ -1,8 +1,6 @@
 GOOS=darwin
 GOARCH=arm64
-
-export GOOS
-export GOARCH
+BUILD_OPTS=-trimpath -tags timetzdata
 
 all:
-	go build -o gmqcli.bin gmq/cmd/gmqcli/main.go
+	go build $(BUILD_OPTS) -o gmqcli.bin gmq/cmd/gmqcli/main.go

@@ -5,7 +5,7 @@
 ## temporary files
 *~
 *.bak
-*.swp
+.*
 .vscode/
 
 ignore/
