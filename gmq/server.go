@@ -2,7 +2,6 @@ package gmq
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/giant-stone/go/glogging"
@@ -55,11 +54,12 @@ func (it *Server) Run(mux *Mux) (err error) {
 	for queueName := range patterns {
 		queueCfg, ok := it.cfg.QueueCfgs[queueName]
 		params := ProcessorParams{
-			Ctx:       it.ctx,
-			Broker:    it.broker,
-			Handler:   mux,
-			Logger:    it.logger,
-			QueueName: queueName,
+			Ctx:         it.ctx,
+			Broker:      it.broker,
+			Handler:     mux,
+			Logger:      it.logger,
+			RestIfNoMsg: it.cfg.RestIfNoMsg,
+			QueueName:   queueName,
 		}
 
 		if ok {
@@ -87,12 +87,17 @@ func (it *Server) Run(mux *Mux) (err error) {
 		p.start()
 	}
 
+	if it.cfg.MsgMaxTTL == 0 {
+		it.cfg.MsgMaxTTL = TTLMsg
+	}
+
 	// auto-delete dead messages
 	it.cleaner = NewCleaner(CleanerParams{
-		Ctx:        it.ctx,
 		Broker:     it.broker,
+		Ctx:        it.ctx,
 		QueueNames: it.queueNames,
 		Logger:     it.logger,
+		MsgMaxTTL:  it.cfg.MsgMaxTTL,
 	})
 	it.cleaner.start()
 
@@ -108,35 +113,15 @@ func (it *Server) Shutdown() {
 }
 
 func (it *Server) Pause(qname string) error {
-	var err error
 	if _, has := it.queueNames[qname]; !has {
-		it.logger.Warn("Pause failed, invalid queue name")
-		return ErrInvalidQueue
+		return nil
 	}
-
-	if err = it.broker.Pause(it.ctx, qname); err != nil {
-		if errors.Is(err, ErrInternal) {
-			it.logger.Warn("the queue is already paused")
-		} else {
-			it.logger.Errorf("queue: %s op:pause, error(%s)", qname, err)
-		}
-	}
-	return err
+	return it.broker.Pause(it.ctx, qname)
 }
 
 func (it *Server) Resume(qname string) error {
-	var err error
 	if _, has := it.queueNames[qname]; !has {
-		it.logger.Warn("Resume failed, invalid queue name")
-		return ErrInvalidQueue
+		return nil
 	}
-
-	if err = it.broker.Resume(it.ctx, qname); err != nil {
-		if errors.Is(err, ErrInternal) {
-			it.logger.Warn("the queue is not paused")
-		} else {
-			it.logger.Errorf("queue: %s op:resume, error(%s)", qname, err)
-		}
-	}
-	return err
+	return it.broker.Resume(it.ctx, qname)
 }
