@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/giant-stone/go/glogging"
 	"github.com/giant-stone/go/gstr"
 	"github.com/giant-stone/go/gtime"
 	"github.com/go-redis/redis/v8"
@@ -453,24 +452,24 @@ func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (
 
 // scriptDelete delete a message.
 //
-// KEYS[1] -> gmq:<queueName>:processing
-// KEYS[2] -> gmq:<queueName>:failed
+// KEYS[1] -> gmq:<queueName>:failed
+// KEYS[2] -> gmq:<queueName>:processing
 // KEYS[3] -> created
-// KEYS[4:5] ->  MsgId:MsgKeyQueue
+// KEYS[i]   -> <msgId1>
+// KEYS[i+1] -> <keyMsgDetail1>
 // ...
-
+//
 // ARGV[1] -> cutoff
 // ARGV[2] -> Length of KEYS
-
 var scriptCheckAndDelete = redis.NewScript(`
-	for i=4, ARGV[2], 2 do
-	if redis.call("HGET", KEYS[i+1], KEYS[3]) <= ARGV[1] then
-			redis.call("DEL", KEYS[i+1])
-			redis.call("LREM", KEYS[1], 0, KEYS[i])
-			redis.call("LREM", KEYS[2],0, KEYS[i])
-		end
+for i=4, ARGV[2], 2 do
+	if redis.call("HGET", KEYS[i+1], KEYS[3]) >= ARGV[1] then
+		redis.call("DEL", KEYS[i+1])
+		redis.call("LREM", KEYS[1], 0, KEYS[i])
+		redis.call("LREM", KEYS[2], 0, KEYS[i])
 	end
-	return 0
+end
+return 0
 `)
 
 // delete entries old than first entry of pending
@@ -487,19 +486,32 @@ func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, duration
 		"created",
 	}
 
+	step := int64(10000)
 	for _, state := range states {
-		tmp, err := it.cli.LRange(ctx, state, 0, -1).Result()
-		if err != nil {
-			return ErrInternal
-		}
+		start := int64(0)
+		stop := step
 
-		for i := range tmp {
-			keys = append(keys, tmp[i], NewKeyMsgDetail(it.namespace, queueName, tmp[i]))
+		for {
+			tmp, err := it.cli.LRange(ctx, state, start, stop).Result()
+			if err != nil {
+				return ErrInternal
+			}
+
+			for i := range tmp {
+				msgId := tmp[i]
+				keys = append(keys, msgId, NewKeyMsgDetail(it.namespace, queueName, msgId))
+			}
+
+			if len(tmp) < int(step) {
+				break
+			}
+
+			start += step
+			stop += step
 		}
 	}
 
 	if len(keys) == 3 {
-		glogging.Sugared.Info("broker.DeleteAgo: nothing to clear")
 		return nil
 	}
 

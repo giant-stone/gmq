@@ -17,6 +17,7 @@ type Processor struct {
 	errLogLimiter *rate.Limiter
 	handler       Handler
 	logger        Logger
+	restIfNoMsg   time.Duration
 
 	queueName string
 
@@ -27,11 +28,12 @@ type Processor struct {
 }
 
 type ProcessorParams struct {
-	Ctx       context.Context
-	Broker    Broker
-	Handler   Handler
-	Logger    Logger
-	QueueName string
+	Ctx         context.Context
+	Broker      Broker
+	RestIfNoMsg time.Duration
+	Handler     Handler
+	Logger      Logger
+	QueueName   string
 
 	WorkerNum              uint16
 	WorkerWorkIntervalFunc FuncWorkInterval
@@ -46,12 +48,17 @@ func NewProcessor(params ProcessorParams) *Processor {
 		params.QueueName = DefaultQueueName
 	}
 
+	if params.RestIfNoMsg == 0 {
+		params.RestIfNoMsg = time.Second
+	}
+
 	return &Processor{
 		broker:        params.Broker,
 		ctx:           params.Ctx,
 		errLogLimiter: rate.NewLimiter(rate.Every(3*time.Second), 1),
 		handler:       params.Handler,
 		logger:        params.Logger,
+		restIfNoMsg:   params.RestIfNoMsg,
 		sema:          make(chan struct{}, params.WorkerNum),
 
 		workerNum:              params.WorkerNum,
@@ -91,7 +98,7 @@ func (it *Processor) exec() {
 				switch {
 				case errors.Is(err, ErrNoMsg):
 					{
-						time.Sleep(time.Second)
+						time.Sleep(it.restIfNoMsg)
 						<-it.sema
 						return
 					}

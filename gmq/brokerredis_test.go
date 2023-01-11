@@ -15,7 +15,6 @@ import (
 	"github.com/giant-stone/go/gtime"
 	"github.com/giant-stone/go/gutil"
 	"github.com/go-redis/redis/v8"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giant-stone/gmq/gmq"
@@ -275,118 +274,75 @@ func workIntervalFunc() time.Duration {
 }
 
 func TestGmq_DeleteAgo(t *testing.T) {
-	broker := getTestBrokerRedis(t)
-	// 设置仿真时钟
-	now := time.Now()
-	broker.SetClock(gmq.NewSimulatedClock(now))
-	rdb := getTestRedisClient(t)
-	defer broker.Close()
-	mux := gmq.NewMux()
+	msg := GenerateNewMsg()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	slowQueueName := "seckill"
-	testQueueName := "QueueTestDeleteAgo"
-	srv := gmq.NewServer(ctx, broker, &gmq.Config{Logger: glogging.Sugared,
-		QueueCfgs: map[string]*gmq.QueueCfg{
-			// 队列名 - 队列配置
-			slowQueueName: gmq.NewQueueCfg(
-				gmq.OptQueueWorkerNum(1), // 配置限制队列只有一个 worker
-				gmq.OptWorkerWorkInterval(workIntervalFunc),
-			),
-			testQueueName: gmq.NewQueueCfg(
-				gmq.OptQueueWorkerNum(2),
-			),
-		},
-	})
 
-	// 设置消息消费者，mux 类似于 web 框架中常用的多路复用路由处理，
-	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
-	mux.Handle(testQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
-		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
-		if rand.Intn(2) == 1 {
-			return errors.New("this is a failure test for default queue")
-		} else {
-			return nil
-		}
+	cli := getTestRedisClient(t)
+	require.NotNil(t, cli)
+	broker, err := gmq.NewBrokerFromRedisClient(cli)
+	require.NoError(t, err)
 
+	now := time.Now()
+	broker.SetClock(gmq.NewSimulatedClock(now))
+	defer broker.Close()
+
+	restIfNoMsg := time.Millisecond * time.Duration(10)
+	msgMaxTTL := time.Millisecond * time.Duration(100)
+	srv := gmq.NewServer(ctx, broker, &gmq.Config{MsgMaxTTL: msgMaxTTL, RestIfNoMsg: restIfNoMsg})
+	mux := gmq.NewMux()
+
+	mux.Handle(msg.Queue, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
+		return errors.New("error")
 	}))
 
-	mux.Handle(slowQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
-		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
-		if rand.Intn(2) == 1 {
-			return errors.New("this is a failure test for slow queue")
-		} else {
-			return nil
-		}
-	}))
+	err = srv.Run(mux)
+	require.NoError(t, err, "srv.Run")
 
-	if err := srv.Run(mux); err != nil {
-		require.NoError(t, err, "srv.Run")
-	}
-	cutoff := now.Add(-time.Second * 1000)
-	created := cutoff.UnixMilli()
-
-	payload := "{\"data\": \"Msg Fromm TestFail\"}"
-	for i := 0; i < 10; i++ {
-		msg := &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
-		addMsgAtProcessing(t, ctx, rdb, msg, []int64{created, created})
-		msg = &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: slowQueueName}
-		addMsgAtProcessing(t, ctx, rdb, msg, []int64{created, created})
-
-		msg = &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
-		addMsgAtFailed(t, ctx, rdb, msg, []int64{created, created, created})
-		msg = &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: slowQueueName}
-		addMsgAtFailed(t, ctx, rdb, msg, []int64{created, created, created})
-	}
-
-	// 检查队列消息是否成功删除
-
-	broker.DeleteAgo(ctx, testQueueName, time.Second)
-	count, err := rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 0, int(count))
-
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueFailed(gmq.Namespace, testQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 0, int(count))
-
-	err = broker.DeleteAgo(ctx, slowQueueName, time.Second)
+	_, err = broker.Enqueue(ctx, msg)
 	require.NoError(t, err)
 
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, slowQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 0, int(count))
+	// wait consumer done
+	time.Sleep(restIfNoMsg * 2)
 
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueFailed(gmq.Namespace, slowQueueName)).Result()
+	// check it first time
+	queueStats, err := broker.GetStats(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 0, int(count))
+	require.Equal(t, len(queueStats), 1)
 
-	created = now.UnixMilli()
-	msg := &gmq.Msg{Payload: []byte("Available msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
-	addMsgAtProcessing(t, ctx, rdb, msg, []int64{created, created})
+	queueStat := queueStats[0]
+	require.Equal(t, msg.Queue, queueStat.Name)
+	require.Equal(t, int64(1), queueStat.Total)
+	require.Equal(t, int64(0), queueStat.Pending)
+	require.Equal(t, int64(0), queueStat.Waiting)
+	require.Equal(t, int64(0), queueStat.Processing)
+	require.Equal(t, int64(0), queueStat.Completed)
+	require.Equal(t, int64(1), queueStat.Failed)
 
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
+	keys, err := broker.ListMsg(ctx, msg.Queue, gmq.MsgStateFailed, 0, -1)
 	require.NoError(t, err)
-	require.Equal(t, 1, int(count))
+	require.Equal(t, msg.Id, keys[0])
 
-	ret, err := rdb.Keys(ctx, msgPattern(testQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 1, len(ret))
+	// wait cleaner done
+	time.Sleep(msgMaxTTL)
 
-	broker.SetClock(gmq.NewSimulatedClock(time.Now().Add(time.Second)))
-	err = broker.DeleteAgo(ctx, testQueueName, time.Second)
+	// check it second time
+	queueStats, err = broker.GetStats(ctx)
 	require.NoError(t, err)
+	require.Equal(t, len(queueStats), 1)
 
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 0, int(count))
+	queueStat = queueStats[0]
+	require.Equal(t, msg.Queue, queueStat.Name)
+	require.Equal(t, int64(0), queueStat.Total)
+	require.Equal(t, int64(0), queueStat.Pending)
+	require.Equal(t, int64(0), queueStat.Waiting)
+	require.Equal(t, int64(0), queueStat.Processing)
+	require.Equal(t, int64(0), queueStat.Completed)
+	require.Equal(t, int64(0), queueStat.Failed)
 
-	ret, err = rdb.Keys(ctx, msgPattern(testQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 0, len(ret))
-	err = broker.DeleteAgo(ctx, testQueueName, time.Second)
-	require.NoError(t, err)
+	_, err = broker.ListMsg(ctx, msg.Queue, gmq.MsgStateFailed, 0, -1)
+	require.ErrorIs(t, gmq.ErrNoMsg, err)
 }
 
 // KEYS[1] -> gmq:<queuename>:processing

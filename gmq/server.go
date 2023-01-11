@@ -54,11 +54,12 @@ func (it *Server) Run(mux *Mux) (err error) {
 	for queueName := range patterns {
 		queueCfg, ok := it.cfg.QueueCfgs[queueName]
 		params := ProcessorParams{
-			Ctx:       it.ctx,
-			Broker:    it.broker,
-			Handler:   mux,
-			Logger:    it.logger,
-			QueueName: queueName,
+			Ctx:         it.ctx,
+			Broker:      it.broker,
+			Handler:     mux,
+			Logger:      it.logger,
+			RestIfNoMsg: it.cfg.RestIfNoMsg,
+			QueueName:   queueName,
 		}
 
 		if ok {
@@ -86,12 +87,17 @@ func (it *Server) Run(mux *Mux) (err error) {
 		p.start()
 	}
 
+	if it.cfg.MsgMaxTTL == 0 {
+		it.cfg.MsgMaxTTL = TTLMsg
+	}
+
 	// auto-delete dead messages
 	it.cleaner = NewCleaner(CleanerParams{
-		Ctx:        it.ctx,
 		Broker:     it.broker,
+		Ctx:        it.ctx,
 		QueueNames: it.queueNames,
 		Logger:     it.logger,
+		MsgMaxTTL:  it.cfg.MsgMaxTTL,
 	})
 	it.cleaner.start()
 

@@ -39,21 +39,11 @@ func getTestClientInMemory(t *testing.T) *gmq.Client {
 	return cli
 }
 
-func generateNewMsg() *gmq.Msg {
-	id := fmt.Sprintf("%s.%d", grand.String(10), time.Now().UnixMilli())
-	type Payload struct {
-		Data string
-	}
-	p := Payload{Data: grand.String(20)}
-	dat, _ := json.Marshal(p)
-	return &gmq.Msg{Payload: dat, Id: id, Queue: grand.String(5)}
-}
-
 func TestBrokerInMemory_Enqueue(t *testing.T) {
 	cli := getTestClientInMemory(t)
 	defer cli.Close()
 
-	msgWant := generateNewMsg()
+	msgWant := GenerateNewMsg()
 	msgGot, err := cli.Enqueue(context.Background(), msgWant)
 	require.NoError(t, err)
 
@@ -75,7 +65,7 @@ func TestBrokerInMemory_GetMsg(t *testing.T) {
 	require.NoError(t, err)
 	defer broker.Close()
 
-	msgWant := generateNewMsg()
+	msgWant := GenerateNewMsg()
 	rsEnqueue, err := cli.Enqueue(context.Background(), msgWant)
 	require.NoError(t, err)
 	gotPayload := rsEnqueue.GetPayload()
@@ -133,7 +123,7 @@ func TestBrokerInMemory_DeleteMsg(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	defer broker.Close()
 
-	msgWant := generateNewMsg()
+	msgWant := GenerateNewMsg()
 	ctx := context.Background()
 
 	_, err := broker.Enqueue(ctx, msgWant)
@@ -154,7 +144,7 @@ func TestBrokerInMemory_DeleteQueue(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	defer broker.Close()
 
-	msgWant := generateNewMsg()
+	msgWant := GenerateNewMsg()
 	ctx := context.Background()
 
 	_, err := broker.Enqueue(ctx, msgWant)
@@ -177,10 +167,10 @@ func TestBrokerInMemory_DeleteAgo(t *testing.T) {
 
 	queueName := grand.String(6)
 
-	msgWantShortLife := generateNewMsg()
+	msgWantShortLife := GenerateNewMsg()
 	msgWantShortLife.Queue = queueName
 
-	msgWantLongLive := generateNewMsg()
+	msgWantLongLive := GenerateNewMsg()
 	msgWantLongLive.Queue = queueName
 
 	ctx := context.Background()
@@ -212,7 +202,7 @@ func TestBrokerInMemory_Complete(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	defer broker.Close()
 
-	msgWant := generateNewMsg()
+	msgWant := GenerateNewMsg()
 	ctx := context.Background()
 
 	_, err := broker.Enqueue(ctx, msgWant)
@@ -247,7 +237,7 @@ func TestBrokerInMemory_Fail(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	defer broker.Close()
 
-	msgWant := generateNewMsg()
+	msgWant := GenerateNewMsg()
 	ctx := context.Background()
 
 	_, err := broker.Enqueue(ctx, msgWant)
@@ -282,7 +272,7 @@ func TestBrokerInMemory_GetStats(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	defer broker.Close()
 
-	msgWant := generateNewMsg()
+	msgWant := GenerateNewMsg()
 	ctx := context.Background()
 	var err error
 
@@ -375,7 +365,7 @@ func TestBrokerInMemory_GetStatsByDate(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	defer broker.Close()
 
-	msgWant := generateNewMsg()
+	msgWant := GenerateNewMsg()
 	ctx := context.Background()
 	var err error
 

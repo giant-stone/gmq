@@ -37,6 +37,6 @@ func (it *Msg) GetQueue() string {
 }
 
 func (it *Msg) String() string {
-	shorten := gstr.ShortenWith(string(it.Payload), 50, gstr.DefaultShortenSuffix)
+	shorten := gstr.ShortenWith(string(it.Payload), 200, gstr.DefaultShortenSuffix)
 	return fmt.Sprintf("<Msg queue=%s id=%s payload=%s>", it.Queue, it.Id, shorten)
 }
