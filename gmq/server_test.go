@@ -9,8 +9,8 @@ import (
 	"github.com/giant-stone/gmq/gmq"
 )
 
-func TestNewServer(t *testing.T) {
-	broker := setup(t)
+func TestGmq_NewServer(t *testing.T) {
+	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
 	srv := gmq.NewServer(context.Background(), broker, nil)
@@ -26,8 +26,8 @@ func TestNewServer(t *testing.T) {
 	srv.Shutdown()
 }
 
-func TestNewServerErrNoHandlers(t *testing.T) {
-	broker := setup(t)
+func TestGmq_NewServerErrNoHandlers(t *testing.T) {
+	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
 	srv := gmq.NewServer(context.Background(), broker, nil)

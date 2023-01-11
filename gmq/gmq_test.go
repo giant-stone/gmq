@@ -1,60 +1,20 @@
 package gmq_test
 
 import (
-	"context"
-	"flag"
-	"testing"
-
-	"github.com/giant-stone/go/glogging"
-	"github.com/go-redis/redis/v8"
-	"github.com/stretchr/testify/require"
+	"encoding/json"
+	"fmt"
+	"time"
 
 	"github.com/giant-stone/gmq/gmq"
+	"github.com/giant-stone/go/grand"
 )
 
-var (
-	dsnRedis        string
-	universalBroker gmq.Broker
-	universalCli    *redis.Client
-)
-
-func init() {
-	glogging.Init([]string{"stdout"}, "debug")
-	flag.StringVar(
-		&dsnRedis,
-		"dsnRedis",
-		"redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1",
-		"redis data source name for testing",
-	)
-}
-
-// setup returns a redis broker for testing
-func setup(tb testing.TB) (broker gmq.Broker) {
-	tb.Helper()
-	opts, err := redis.ParseURL(dsnRedis)
-	require.NoError(tb, err, "redis.ParseURL")
-	cli := redis.NewClient(opts)
-	err = cli.FlushDB(context.Background()).Err()
-	require.NoError(tb, err, "cli.FlushDB")
-	broker, err = gmq.NewBrokerFromRedisClient(cli)
-	require.NoError(tb, err, "gmq.NewBrokerFromRedisClient")
-	universalCli = cli
-	universalBroker = broker
-	return
-}
-
-func getTestBroker(t testing.TB) gmq.Broker {
-	setup(t)
-	return universalBroker
-}
-
-func getTestClient(t testing.TB) *redis.Client {
-	setup(t)
-	err := universalCli.FlushDB(context.Background()).Err()
-	require.NoError(t, err, "cli.FlushDB")
-	return universalCli
-}
-
-func msgPattern(qname string) string {
-	return gmq.Namespace + ":" + qname + ":msg:*"
+func GenerateNewMsg() *gmq.Msg {
+	id := fmt.Sprintf("%s-%d", grand.String(10), time.Now().UnixMilli())
+	type Payload struct {
+		Data string
+	}
+	p := Payload{Data: grand.String(20)}
+	dat, _ := json.Marshal(p)
+	return &gmq.Msg{Payload: dat, Id: id, Queue: grand.String(5)}
 }
