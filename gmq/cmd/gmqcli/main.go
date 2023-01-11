@@ -209,6 +209,16 @@ func getMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
 	dat, err := json.MarshalIndent(msg, "", "  ")
 	gutil.ExitOnErr(err)
 	fmt.Println("INTERNAL\n", string(dat))
+
+	if msg.Created > 0 {
+		fmt.Printf("  Created=%d (%s) \n", msg.Created, time.UnixMilli(msg.Created).Format(time.RFC3339))
+	}
+	if msg.Updated > 0 {
+		fmt.Printf("  Updated=%d (%s) \n", msg.Updated, time.UnixMilli(msg.Updated).Format(time.RFC3339))
+	}
+	if msg.Expiredat > 0 {
+		fmt.Printf("  Expiredat=%d (%s) \n", msg.Expiredat, time.UnixMilli(msg.Expiredat).Format(time.RFC3339))
+	}
 }
 
 func listMsg(ctx context.Context, broker gmq.Broker, queueName string) {
