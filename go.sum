@@ -15,10 +15,8 @@ github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f/go.mod h1:cu
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 github.com/fsnotify/fsnotify v1.4.9 h1:hsms1Qyu0jgnwNXIxa+/V/PDsU6CfLf6CNO8H7IWoS4=
 github.com/fsnotify/fsnotify v1.4.9/go.mod h1:znqG4EE+3YCdAaPaxE2ZRY/06pZUdp0tY4IgpuI1SZQ=
-github.com/giant-stone/go v0.0.8 h1:Lldnd1/c0HPJPI8oV5wsdrztKBU9NC+dIlHsbxSIy7g=
-github.com/giant-stone/go v0.0.8/go.mod h1:xyV8zm52flXK19kXFma1o42ZAbmpL8q+9XSGEVO8p5M=
-github.com/giant-stone/go v0.0.11 h1:d0FHoI/Q/V/eEFOO30oc55ijEEMtaTkGOFZgZPk/Xa8=
-github.com/giant-stone/go v0.0.11/go.mod h1:rnXNHgsyXQGKYQ4VudxndTdEJFEIQKm3lqS1yTHkRhI=
+github.com/giant-stone/go v0.0.13 h1:GefZaJD7t1N3++vstGQv4XQE1pQrlJq16O9ZsrmQZyI=
+github.com/giant-stone/go v0.0.13/go.mod h1:rnXNHgsyXQGKYQ4VudxndTdEJFEIQKm3lqS1yTHkRhI=
 github.com/go-redis/redis/v8 v8.11.5 h1:AcZZR7igkdvfVmQTPnu9WE37LRrO/YrBH5zWyjDC0oI=
 github.com/go-redis/redis/v8 v8.11.5/go.mod h1:gREzHqY1hg6oD9ngVRbLStwAWKhA0FEgq8Jd4h5lpwo=
 github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0/go.mod h1:fyg7847qk6SyHyPtNmDHnmrv/HOrqktSC+C9fM+CJOE=
