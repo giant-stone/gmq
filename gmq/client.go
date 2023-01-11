@@ -6,15 +6,6 @@ type Client struct {
 	broker Broker
 }
 
-func NewClient(dsn string) (rs *Client, err error) {
-	broker, err := NewBrokerRedis(dsn)
-	if err != nil {
-		return
-	}
-
-	return &Client{broker: broker}, nil
-}
-
 func NewClientFromBroker(broker Broker) (rs *Client, err error) {
 	return &Client{broker: broker}, nil
 }

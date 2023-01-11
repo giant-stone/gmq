@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -14,14 +15,63 @@ import (
 	"github.com/giant-stone/go/gtime"
 	"github.com/giant-stone/go/gutil"
 	"github.com/go-redis/redis/v8"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giant-stone/gmq/gmq"
 )
 
-func TestPauseAndResume(t *testing.T) {
-	broker := getTestBroker(t)
+var (
+	defaultLoglevel = "debug"
+)
+
+var (
+	universalBrokerRedis gmq.Broker
+	universalRedisClient *redis.Client
+)
+
+// setupBrokerRedis returns a redis broker for testing
+func setupBrokerRedis(tb testing.TB) (broker gmq.Broker) {
+	tb.Helper()
+
+	dsnRedis := os.Getenv("GMQ_RDS")
+	if dsnRedis == "" {
+		tb.Skip("skip all redis broker releated tests because of env GMQ_RDS not set")
+	}
+
+	loglevel := os.Getenv("GMQ_LOGLEVEL")
+	if loglevel == "" {
+		loglevel = defaultLoglevel
+	}
+	glogging.Init([]string{"stderr"}, glogging.Loglevel(loglevel))
+
+	opts, err := redis.ParseURL(dsnRedis)
+	require.NoError(tb, err, "redis.ParseURL")
+
+	cli := redis.NewClient(opts)
+	err = cli.FlushDB(context.Background()).Err()
+	require.NoError(tb, err, "cli.FlushDB")
+
+	broker, err = gmq.NewBrokerFromRedisClient(cli)
+	require.NoError(tb, err, "gmq.NewBrokerFromRedisClient")
+
+	universalRedisClient = cli
+	universalBrokerRedis = broker
+	return universalBrokerRedis
+}
+
+func getTestBrokerRedis(t testing.TB) gmq.Broker {
+	return setupBrokerRedis(t)
+}
+
+func getTestRedisClient(t testing.TB) *redis.Client {
+	setupBrokerRedis(t)
+	err := universalRedisClient.FlushDB(context.Background()).Err()
+	require.NoError(t, err, "cli.FlushDB")
+	return universalRedisClient
+}
+
+func TestGmq_PauseAndResume(t *testing.T) {
+	broker := getTestBrokerRedis(t)
 	defer broker.Close()
 
 	testQueueName := "QueueTestPauseAndResume"
@@ -35,7 +85,7 @@ func TestPauseAndResume(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cli, err := gmq.NewClient(dsnRedis)
+	cli, err := gmq.NewClientFromBroker(broker)
 	gutil.ExitOnErr(err)
 	payload := []byte("{\"data\": \"Msg Fromm TestPauseAndResume\"}")
 	go func() {
@@ -74,8 +124,8 @@ func TestPauseAndResume(t *testing.T) {
 	// wait for a while
 	time.Sleep(time.Second)
 	// pause and resume invalid queue
-	require.ErrorIs(t, srv.Pause("queueNotExist"), gmq.ErrInvalidQueue)
-	require.ErrorIs(t, srv.Resume("queueNotExist"), gmq.ErrInvalidQueue)
+	require.NoError(t, srv.Pause("queueNotExist"))
+	require.NoError(t, srv.Resume("queueNotExist"))
 
 	// pause and resume correctly
 	time.Sleep(time.Millisecond * 500)
@@ -89,7 +139,7 @@ func TestPauseAndResume(t *testing.T) {
 	date := gtime.UnixTime2YyyymmddUtc(time.Now().Unix())
 	dailyStats, err := broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.Pause")
-	ProcessedBeforePause := dailyStats.Processed
+	ProcessedBeforePause := dailyStats.Completed
 	FailedBeforePause := dailyStats.Failed
 
 	// repeated operation for pause
@@ -100,7 +150,7 @@ func TestPauseAndResume(t *testing.T) {
 	time.Sleep(time.Millisecond * 1000)
 	dailyStats, err = broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.Resume")
-	ProcessedAfterPause := dailyStats.Processed
+	ProcessedAfterPause := dailyStats.Completed
 	FailedAfterPause := dailyStats.Failed
 
 	require.Zero(t, ProcessedAfterPause-(ProcessedBeforePause),
@@ -119,7 +169,7 @@ func TestPauseAndResume(t *testing.T) {
 	time.Sleep(time.Millisecond * 1000)
 	dailyStats, err = broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.Resume")
-	ProcessedAfterResume := dailyStats.Processed
+	ProcessedAfterResume := dailyStats.Completed
 	FailedAfterResume := dailyStats.Failed
 	require.NotZero(t, ProcessedAfterResume-ProcessedAfterPause,
 		fmt.Sprintf("srv.Resume ProcessedAfterResume: %d, ProcessedAfterPause: %d", ProcessedAfterResume, ProcessedAfterPause))
@@ -128,9 +178,9 @@ func TestPauseAndResume(t *testing.T) {
 
 }
 
-func TestFail(t *testing.T) {
-	broker := getTestBroker(t)
-	rdb := getTestClient(t)
+func TestBrokerRedis_Fail(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	rdb := getTestRedisClient(t)
 	defer broker.Close()
 
 	testQueueName := "QueueTestFail"
@@ -170,7 +220,6 @@ func TestFail(t *testing.T) {
 	countProcessed := 0
 	errFail := errors.New("this is a failure test for default queue")
 	mux.Handle(testQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
-		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
 		// 防止队列为空自旋
 		time.Sleep(10 * time.Millisecond)
 		wg.Done()
@@ -193,7 +242,7 @@ func TestFail(t *testing.T) {
 	date := gtime.UnixTime2YyyymmddUtc(time.Now().Unix())
 	dailyStats, err := broker.GetStatsByDate(ctx, date)
 	require.NoError(t, err, "srv.GetStatsByDate")
-	ProcessedAfterPause := dailyStats.Processed
+	ProcessedAfterPause := dailyStats.Completed
 	FailedAfterPause := dailyStats.Failed
 
 	require.Zero(t, ProcessedAfterPause-int64(countProcessed), "Processed Queue Msg Records")
@@ -209,11 +258,13 @@ func TestFail(t *testing.T) {
 		state, err := rdb.HGet(ctx, msgs[i], "state").Result()
 		require.NoError(t, err)
 		require.Equal(t, "failed", state)
-		dieat, err := rdb.HGet(ctx, msgs[i], "dieat").Result()
+
+		dieat, err := rdb.HGet(ctx, msgs[i], "updated").Result()
+		require.NoError(t, err)
 		require.NotEqual(t, "", dieat)
-		processedat, err := rdb.HGet(ctx, msgs[i], "processedat").Result()
-		require.NotEqual(t, "", processedat)
+
 		errMsg, err := rdb.HGet(ctx, msgs[i], "err").Result()
+		require.NoError(t, err)
 		require.Equal(t, errFail.Error(), errMsg)
 	}
 }
@@ -222,118 +273,76 @@ func workIntervalFunc() time.Duration {
 	return time.Second * time.Duration(1)
 }
 
-func TestDeleteAgo(t *testing.T) {
-	broker := getTestBroker(t)
-	// 设置仿真时钟
-	now := time.Now()
-	broker.SetClock(gmq.NewSimulatedClock(now))
-	rdb := getTestClient(t)
-	defer broker.Close()
-	mux := gmq.NewMux()
+func TestGmq_DeleteAgo(t *testing.T) {
+	msg := GenerateNewMsg()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	slowQueueName := "seckill"
-	testQueueName := "QueueTestDeleteAgo"
-	srv := gmq.NewServer(ctx, broker, &gmq.Config{Logger: glogging.Sugared,
-		QueueCfgs: map[string]*gmq.QueueCfg{
-			// 队列名 - 队列配置
-			slowQueueName: gmq.NewQueueCfg(
-				gmq.OptQueueWorkerNum(1), // 配置限制队列只有一个 worker
-				gmq.OptWorkerWorkInterval(workIntervalFunc),
-			),
-			testQueueName: gmq.NewQueueCfg(
-				gmq.OptQueueWorkerNum(2),
-			),
-		},
-	})
 
-	// 设置消息消费者，mux 类似于 web 框架中常用的多路复用路由处理，
-	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
-	mux.Handle(testQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
-		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
-		if rand.Intn(2) == 1 {
-			return errors.New("this is a failure test for default queue")
-		} else {
-			return nil
-		}
+	cli := getTestRedisClient(t)
+	require.NotNil(t, cli)
+	broker, err := gmq.NewBrokerFromRedisClient(cli)
+	require.NoError(t, err)
 
+	now := time.Now()
+	broker.SetClock(gmq.NewSimulatedClock(now))
+	defer broker.Close()
+
+	restIfNoMsg := time.Millisecond * time.Duration(10)
+	msgMaxTTL := time.Millisecond * time.Duration(100)
+	srv := gmq.NewServer(ctx, broker, &gmq.Config{MsgMaxTTL: msgMaxTTL, RestIfNoMsg: restIfNoMsg})
+	mux := gmq.NewMux()
+
+	mux.Handle(msg.Queue, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
+		return errors.New("error")
 	}))
 
-	mux.Handle(slowQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
-		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
-		if rand.Intn(2) == 1 {
-			return errors.New("this is a failure test for slow queue")
-		} else {
-			return nil
-		}
-	}))
+	err = srv.Run(mux)
+	require.NoError(t, err, "srv.Run")
 
-	if err := srv.Run(mux); err != nil {
-		require.NoError(t, err, "srv.Run")
-	}
-	cutoff := now.Add(-time.Second * 1000)
-	created := cutoff.UnixMilli()
-
-	payload := "{\"data\": \"Msg Fromm TestFail\"}"
-	for i := 0; i < 10; i++ {
-		msg := &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
-		addMsgAtProcessing(t, ctx, rdb, msg, []int64{created, created})
-		msg = &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: slowQueueName}
-		addMsgAtProcessing(t, ctx, rdb, msg, []int64{created, created})
-
-		msg = &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
-		addMsgAtFailed(t, ctx, rdb, msg, []int64{created, created, created})
-		msg = &gmq.Msg{Payload: []byte("Outdated msg: " + payload), Id: uuid.NewString(), Queue: slowQueueName}
-		addMsgAtFailed(t, ctx, rdb, msg, []int64{created, created, created})
-	}
-
-	// 检查队列消息是否成功删除
-	broker.DeleteAgo(ctx, testQueueName, int64(time.Now().Second()))
-	count, err := rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 0, int(count))
-
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueFailed(gmq.Namespace, testQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 0, int(count))
-
-	err = broker.DeleteAgo(ctx, slowQueueName, int64(time.Now().Second()))
+	_, err = broker.Enqueue(ctx, msg)
 	require.NoError(t, err)
 
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, slowQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 0, int(count))
+	// wait consumer done
+	time.Sleep(restIfNoMsg * 2)
 
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueFailed(gmq.Namespace, slowQueueName)).Result()
+	// check it first time
+	queueStats, err := broker.GetStats(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 0, int(count))
+	require.Equal(t, len(queueStats), 1)
 
-	created = now.UnixMilli()
-	msg := &gmq.Msg{Payload: []byte("Available msg: " + payload), Id: uuid.NewString(), Queue: testQueueName}
-	addMsgAtProcessing(t, ctx, rdb, msg, []int64{created, created})
+	queueStat := queueStats[0]
+	require.Equal(t, msg.Queue, queueStat.Name)
+	require.Equal(t, int64(1), queueStat.Total)
+	require.Equal(t, int64(0), queueStat.Pending)
+	require.Equal(t, int64(0), queueStat.Waiting)
+	require.Equal(t, int64(0), queueStat.Processing)
+	require.Equal(t, int64(0), queueStat.Completed)
+	require.Equal(t, int64(1), queueStat.Failed)
 
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
+	keys, err := broker.ListMsg(ctx, msg.Queue, gmq.MsgStateFailed, 0, -1)
 	require.NoError(t, err)
-	require.Equal(t, 1, int(count))
+	require.Equal(t, msg.Id, keys[0])
 
-	ret, err := rdb.Keys(ctx, msgPattern(testQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 1, len(ret))
+	// wait cleaner done
+	time.Sleep(msgMaxTTL)
 
-	broker.SetClock(gmq.NewSimulatedClock(time.Now().Add(time.Second)))
-	err = broker.DeleteAgo(ctx, testQueueName, int64(time.Second))
+	// check it second time
+	queueStats, err = broker.GetStats(ctx)
 	require.NoError(t, err)
+	require.Equal(t, len(queueStats), 1)
 
-	count, err = rdb.LLen(ctx, gmq.NewKeyQueueProcessing(gmq.Namespace, testQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 0, int(count))
+	queueStat = queueStats[0]
+	require.Equal(t, msg.Queue, queueStat.Name)
+	require.Equal(t, int64(0), queueStat.Total)
+	require.Equal(t, int64(0), queueStat.Pending)
+	require.Equal(t, int64(0), queueStat.Waiting)
+	require.Equal(t, int64(0), queueStat.Processing)
+	require.Equal(t, int64(0), queueStat.Completed)
+	require.Equal(t, int64(0), queueStat.Failed)
 
-	ret, err = rdb.Keys(ctx, msgPattern(testQueueName)).Result()
-	require.NoError(t, err)
-	require.Equal(t, 0, len(ret))
-	err = broker.DeleteAgo(ctx, testQueueName, int64(time.Second))
-	require.NoError(t, err)
+	_, err = broker.ListMsg(ctx, msg.Queue, gmq.MsgStateFailed, 0, -1)
+	require.ErrorIs(t, gmq.ErrNoMsg, err)
 }
 
 // KEYS[1] -> gmq:<queuename>:processing
@@ -412,13 +421,13 @@ func addMsgAtFailed(t *testing.T, ctx context.Context, cli *redis.Client, msg gm
 	require.NotEqual(t, gmq.LuaReturnCodeError, rt)
 }
 
-func TestGetStatsWeekly(t *testing.T) {
+func TestBrokerRedis_GetStatsWeekly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	lastRecord := 15
 	now := time.Now().AddDate(0, 0, -lastRecord)
-	broker := getTestBroker(t)
-	rdb := getTestClient(t)
+	broker := getTestBrokerRedis(t)
+	rdb := getTestRedisClient(t)
 	broker.SetClock(gmq.NewSimulatedClock(now))
 	var err error
 	// 生成记录
@@ -437,7 +446,7 @@ func TestGetStatsWeekly(t *testing.T) {
 			msgProcessed[i] = int64(rand.Intn(1000))
 			_, err = rdb.Set(ctx, gmq.NewKeyDailyStatFailed(gmq.Namespace, queue, gtime.UnixTime2YyyymmddUtc(now.Unix())), msgFailed[i], 0).Result()
 			require.NoError(t, err)
-			_, err = rdb.Set(ctx, gmq.NewKeyDailyStatProcessed(gmq.Namespace, queue, gtime.UnixTime2YyyymmddUtc(now.Unix())), msgProcessed[i], 0).Result()
+			_, err = rdb.Set(ctx, gmq.NewKeyDailyStatCompleted(gmq.Namespace, queue, gtime.UnixTime2YyyymmddUtc(now.Unix())), msgProcessed[i], 0).Result()
 			require.NoError(t, err)
 			i++
 		}
@@ -455,12 +464,19 @@ func TestGetStatsWeekly(t *testing.T) {
 	for j := 0; j < lastRecord-periods; j++ {
 		now := time.Now().AddDate(0, 0, periods-lastRecord+j)
 		broker.SetClock(gmq.NewSimulatedClock(now))
-		_, totalInfo, err := broker.GetStatsWeekly(ctx)
+		rsStat, err := broker.GetStatsWeekly(ctx)
 		require.NoError(t, err)
 		info := fmt.Sprintf("brokder.GetStatsWeekly date: %s", gtime.UnixTime2YyyymmddUtc(now.Unix()))
 
-		require.Equal(t, sumProcessed, totalInfo.Processed, info)
-		require.Equal(t, sumFailed, totalInfo.Failed, info)
+		totalCompleted := int64(0)
+		totalFailed := int64(0)
+		for _, item := range rsStat {
+			totalCompleted += item.Completed
+			totalFailed += item.Failed
+		}
+
+		require.Equal(t, sumProcessed, totalCompleted, info)
+		require.Equal(t, sumFailed, totalFailed, info)
 
 		// iter
 		for idx := range queueList {
@@ -471,4 +487,8 @@ func TestGetStatsWeekly(t *testing.T) {
 		}
 	}
 
+}
+
+func msgPattern(qname string) string {
+	return gmq.Namespace + ":" + qname + ":msg:*"
 }
