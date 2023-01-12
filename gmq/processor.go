@@ -104,7 +104,7 @@ func (it *Processor) exec() {
 					}
 				case err != nil:
 					{
-						if it.errLogLimiter.Allow() {
+						if it.errLogLimiter.Allow() && err != context.Canceled {
 							it.logger.Errorf("queue=%s broker.Dequeue %v", it.queueName, err)
 						}
 						<-it.sema

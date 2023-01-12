@@ -54,7 +54,7 @@ func (it *Cleaner) start() {
 					//TBD 是否要对超过一定时间的统计数据进行清理？
 					for queueName := range it.queueNames {
 						err := it.broker.DeleteAgo(it.ctx, queueName, it.msgMaxTTL)
-						if err != nil && it.errLogLimiter.Allow() {
+						if err != nil && it.errLogLimiter.Allow() && err != context.Canceled {
 							it.logger.Errorf("DeleteAgo %v, queue=%s msgMaxTTL=%d", err, queueName, it.msgMaxTTL)
 						}
 					}
