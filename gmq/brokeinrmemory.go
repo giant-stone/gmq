@@ -19,6 +19,7 @@ type BrokerInMemory struct {
 	BrokerUnimplemented
 
 	clock Clock
+	utc   bool
 	lock  sync.RWMutex
 
 	listPending    map[string]*list.List // key is queueName
@@ -34,6 +35,11 @@ type BrokerInMemory struct {
 	maxBytes int64
 
 	queuesPaused map[string]struct{} // key is queueName
+}
+
+// UTC implements Broker
+func (it *BrokerInMemory) UTC(flag bool) {
+	it.utc = flag
 }
 
 type BrokerInMemoryOpts struct {
@@ -78,6 +84,12 @@ func (it *BrokerInMemory) Complete(ctx context.Context, msg IMsg) error {
 	rawMsg.State = MsgStateCompleted
 
 	now := it.clock.Now()
+	if it.utc {
+		now = now.UTC()
+	} else {
+		now = now.Local()
+	}
+
 	nowInMs := now.UnixMilli()
 	rawMsg.Updated = nowInMs
 
@@ -130,6 +142,12 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 	defer it.lock.Unlock()
 
 	now := it.clock.Now()
+	if it.utc {
+		now = now.UTC()
+	} else {
+		now = now.Local()
+	}
+
 	nowInMs := now.UnixMilli()
 
 	for _, stateList := range []map[string]*list.List{
@@ -143,8 +161,6 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 			for e := l.Front(); e != nil; e = e.Next() {
 				msgId := e.Value.(string)
 				rawMsg := it.msgDetail[msgId]
-
-				fmt.Println(msgId, time.UnixMilli(rawMsg.Created), time.UnixMilli(rawMsg.Expiredat))
 
 				if rawMsg.Expiredat > 0 && rawMsg.Expiredat > nowInMs {
 					continue
@@ -263,6 +279,12 @@ func (it *BrokerInMemory) Dequeue(ctx context.Context, queueName string) (*Msg, 
 	rawMsg := it.msgDetail[msgId]
 
 	now := it.clock.Now()
+	if it.utc {
+		now = now.UTC()
+	} else {
+		now = now.Local()
+	}
+
 	nowInMs := now.UnixMilli()
 	rawMsg.Updated = nowInMs
 	rawMsg.State = MsgStateProcessing
@@ -309,6 +331,12 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	it.updateQueueList(ctx, queueName)
 
 	now := it.clock.Now()
+	if it.utc {
+		now = now.UTC()
+	} else {
+		now = now.Local()
+	}
+
 	nowInMs := now.UnixMilli()
 	msgId := newMsgId(queueName, id)
 
@@ -355,6 +383,12 @@ func (it *BrokerInMemory) Fail(ctx context.Context, msg IMsg, errFail error) err
 	rawMsg.Err = errFail.Error()
 	rawMsg.State = MsgStateFailed
 	now := it.clock.Now()
+	if it.utc {
+		now = now.UTC()
+	} else {
+		now = now.Local()
+	}
+
 	nowInMs := now.UnixMilli()
 	rawMsg.Updated = nowInMs
 

@@ -193,7 +193,7 @@ func TestGmq_DeleteAgo(t *testing.T) {
 	defer broker.Close()
 
 	restIfNoMsg := time.Millisecond * time.Duration(10)
-	msgMaxTTL := time.Millisecond * time.Duration(100)
+	msgMaxTTL := time.Millisecond * time.Duration(40)
 	srv := gmq.NewServer(ctx, broker, &gmq.Config{MsgMaxTTL: msgMaxTTL, RestIfNoMsg: restIfNoMsg})
 	mux := gmq.NewMux()
 
@@ -228,8 +228,12 @@ func TestGmq_DeleteAgo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, msg.Id, keys[0])
 
+	gotMsg, err := broker.GetMsg(ctx, msg.Queue, msg.Id)
+	require.NoError(t, err)
+	require.Equal(t, msg.Id, gotMsg.Id)
+
 	// wait cleaner done
-	time.Sleep(msgMaxTTL)
+	time.Sleep(msgMaxTTL * 2)
 
 	// check it second time
 	queueStats, err = broker.GetStats(ctx)
@@ -238,14 +242,17 @@ func TestGmq_DeleteAgo(t *testing.T) {
 
 	queueStat = queueStats[0]
 	require.Equal(t, msg.Queue, queueStat.Name)
-	require.Equal(t, int64(0), queueStat.Total)
+	require.Equal(t, int64(1), queueStat.Total)
 	require.Equal(t, int64(0), queueStat.Pending)
 	require.Equal(t, int64(0), queueStat.Waiting)
 	require.Equal(t, int64(0), queueStat.Processing)
 	require.Equal(t, int64(0), queueStat.Completed)
-	require.Equal(t, int64(0), queueStat.Failed)
+	require.Equal(t, int64(1), queueStat.Failed)
 
 	_, err = broker.ListMsg(ctx, msg.Queue, gmq.MsgStateFailed, 0, -1)
+	require.ErrorIs(t, gmq.ErrNoMsg, err)
+
+	_, err = broker.GetMsg(ctx, msg.Queue, msg.Id)
 	require.ErrorIs(t, gmq.ErrNoMsg, err)
 }
 
@@ -391,4 +398,89 @@ func TestBrokerRedis_GetStatsWeekly(t *testing.T) {
 		}
 	}
 
+}
+
+func TestGmq_GetStats(t *testing.T) {
+	msgFail := GenerateNewMsg()
+	msgFail.Payload = []byte(`fail`)
+
+	msgSucc := GenerateNewMsg()
+	msgSucc.Queue = msgFail.Queue
+	msgSucc.Payload = []byte(`succ`)
+
+	msgProcessing := GenerateNewMsg()
+	msgProcessing.Queue = msgFail.Queue
+	msgProcessing.Payload = []byte(`processing`)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cli := getTestRedisClient(t)
+	require.NotNil(t, cli)
+	broker, err := gmq.NewBrokerFromRedisClient(cli)
+	require.NoError(t, err)
+
+	now := time.Now()
+	broker.SetClock(gmq.NewSimulatedClock(now))
+	defer broker.Close()
+
+	restIfNoMsg := time.Duration(10) * time.Millisecond
+	srv := gmq.NewServer(ctx, broker, &gmq.Config{RestIfNoMsg: restIfNoMsg, MsgMaxTTL: time.Minute})
+	mux := gmq.NewMux()
+	mux.Handle(msgFail.Queue, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
+		p := string(msg.GetPayload())
+		if p == "fail" {
+			return errors.New("fail")
+		} else if p == "succ" {
+			return nil
+		} else if p == "processing" {
+			time.Sleep(time.Minute)
+		}
+		return nil
+	}))
+
+	err = srv.Run(mux)
+	require.NoError(t, err, "srv.Run")
+
+	_, err = broker.Enqueue(ctx, msgFail)
+	require.NoError(t, err)
+	time.Sleep(restIfNoMsg * 2)
+
+	queueStats, err := broker.GetStats(ctx)
+	require.NoError(t, err)
+	qs := queueStats[0]
+	require.Equal(t, int64(1), qs.Total)
+	require.Equal(t, int64(0), qs.Completed)
+	require.Equal(t, int64(1), qs.Failed)
+	require.Equal(t, int64(0), qs.Pending)
+	require.Equal(t, int64(0), qs.Processing)
+	require.Equal(t, int64(0), qs.Waiting)
+
+	_, err = broker.Enqueue(ctx, msgSucc)
+	require.NoError(t, err)
+	time.Sleep(restIfNoMsg * 2)
+
+	queueStats, err = broker.GetStats(ctx)
+	require.NoError(t, err)
+	qs = queueStats[0]
+	require.Equal(t, int64(2), qs.Total)
+	require.Equal(t, int64(1), qs.Completed)
+	require.Equal(t, int64(1), qs.Failed)
+	require.Equal(t, int64(0), qs.Pending)
+	require.Equal(t, int64(0), qs.Processing)
+	require.Equal(t, int64(0), qs.Waiting)
+
+	_, err = broker.Enqueue(ctx, msgProcessing)
+	require.NoError(t, err)
+	time.Sleep(restIfNoMsg * 2)
+
+	queueStats, err = broker.GetStats(ctx)
+	require.NoError(t, err)
+	qs = queueStats[0]
+	require.Equal(t, int64(3), qs.Total)
+	require.Equal(t, int64(1), qs.Completed)
+	require.Equal(t, int64(1), qs.Failed)
+	require.Equal(t, int64(0), qs.Pending)
+	require.Equal(t, int64(1), qs.Processing)
+	require.Equal(t, int64(0), qs.Waiting)
 }

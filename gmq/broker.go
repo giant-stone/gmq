@@ -39,6 +39,9 @@ type Broker interface {
 
 	// SetClock custom internal clock for testing
 	SetClock(c Clock)
+
+	// processing time in UTC instead of local
+	UTC(flag bool)
 }
 
 // BrokerUnimplemented must be embedded to have forward compatible implementations.

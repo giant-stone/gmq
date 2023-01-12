@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/giant-stone/go/glogging"
-	"github.com/giant-stone/go/gtime"
 	"github.com/giant-stone/go/gutil"
 
 	"github.com/giant-stone/gmq/gmq"
@@ -36,6 +35,8 @@ var (
 	offset uint64
 
 	loglevel string
+
+	useUTC bool
 )
 
 var (
@@ -74,6 +75,8 @@ func main() {
 	flag.Int64Var(&limit, "n", 20, "use with -listmsg, maximum number of messages to display, default to display all, if limit <=0, display all the messages after offset ")
 	flag.Uint64Var(&offset, "o", 0, "use with -listmsg, first messages offset to display, start with 0")
 
+	flag.BoolVar(&useUTC, "u", false, "process time in UTC instead of local")
+
 	flag.Parse()
 	flag.Usage = mdbcliUsage
 
@@ -85,6 +88,7 @@ func main() {
 	}
 
 	broker, err := gmq.NewBrokerRedis(dsnRedis)
+	broker.UTC(useUTC)
 	gutil.ExitOnErr(err)
 	ctx := context.Background()
 	if cmdPauseq != "" {
@@ -156,18 +160,19 @@ func printStats(ctx context.Context, broker gmq.Broker) {
 	queues, err := broker.GetStats(ctx)
 	gutil.ExitOnErr(err)
 
-	fmt.Println("")
-	fmt.Print("# gmq stats \n\n")
+	fmt.Print("\n# gmq Statistic \n\n")
+	fmt.Print("## Daily Statistic \n\n")
 	if len(queues) == 0 {
 		fmt.Println("Related info not found. Do consumer(s) have not start yet?")
 	} else {
 		for _, rsStat := range queues {
-			fmt.Printf("queue=%s total=%d pending=%d waiting=%d processing=%d failed=%d \n",
+			fmt.Printf("queue=%s total=%d pending=%d waiting=%d processing=%d completed=%d failed=%d \n",
 				rsStat.Name,
 				rsStat.Total,
 				rsStat.Pending,
 				rsStat.Waiting,
 				rsStat.Processing,
+				rsStat.Completed,
 				rsStat.Failed,
 			)
 		}
@@ -180,18 +185,22 @@ func printStatsWeekly(ctx context.Context, broker gmq.Broker) {
 	gutil.ExitOnErr(err)
 
 	now := time.Now()
-	fmt.Printf("\n## Weekly Statistic: %s ~ %s \n\n",
-		gtime.UnixTime2YyyymmddUtc(now.AddDate(0, 0, -7).Unix()),
-		gtime.UnixTime2YyyymmddUtc(now.Unix()))
+	if useUTC {
+		now = now.UTC()
+	} else {
+		now = now.Local()
+	}
+
+	fmt.Printf("\n## Weekly Statistic: %s ~ %s \n\n", now.AddDate(0, 0, -7).Format("2006-01-02"), now.Format("2006-01-02"))
 
 	totalCompleted := int64(0)
 	totalFailed := int64(0)
 	for _, item := range rsStat {
 		totalCompleted += item.Completed
 		totalFailed += item.Failed
-		fmt.Printf("  date=%s completed=%d, failed=%d, total=%d \n", item.Date, item.Completed, item.Failed, item.Completed+item.Failed)
+		fmt.Printf("date=%s completed=%d, failed=%d, total=%d \n", item.Date, item.Completed, item.Failed, item.Completed+item.Failed)
 	}
-	fmt.Printf("completed=%d, failed=%d, total=%d \n", totalCompleted, totalFailed, totalCompleted+totalFailed)
+	fmt.Printf("\ncompleted=%d, failed=%d, total=%d \n", totalCompleted, totalFailed, totalCompleted+totalFailed)
 }
 
 func getMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
@@ -211,13 +220,33 @@ func getMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
 	fmt.Println("INTERNAL\n", string(dat))
 
 	if msg.Created > 0 {
-		fmt.Printf("  Created=%d (%s) \n", msg.Created, time.UnixMilli(msg.Created).Format(time.RFC3339))
+		t := time.UnixMilli(msg.Created)
+		if useUTC {
+			t = t.UTC()
+		} else {
+			t = t.Local()
+		}
+		fmt.Printf("  Created=%d (%s) \n", msg.Created, t.Format(time.RFC3339))
 	}
+
 	if msg.Updated > 0 {
-		fmt.Printf("  Updated=%d (%s) \n", msg.Updated, time.UnixMilli(msg.Updated).Format(time.RFC3339))
+		t := time.UnixMilli(msg.Updated)
+		if useUTC {
+			t = t.UTC()
+		} else {
+			t = t.Local()
+		}
+		fmt.Printf("  Updated=%d (%s) \n", msg.Updated, t.Format(time.RFC3339))
 	}
+
 	if msg.Expiredat > 0 {
-		fmt.Printf("  Expiredat=%d (%s) \n", msg.Expiredat, time.UnixMilli(msg.Expiredat).Format(time.RFC3339))
+		t := time.UnixMilli(msg.Expiredat)
+		if useUTC {
+			t = t.UTC()
+		} else {
+			t = t.Local()
+		}
+		fmt.Printf("  Expiredat=%d (%s) \n", msg.Expiredat, t.Format(time.RFC3339))
 	}
 }
 
