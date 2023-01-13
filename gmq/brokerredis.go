@@ -39,10 +39,6 @@ func NewKeyQueueProcessing(ns, queueName string) string {
 	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateProcessing)
 }
 
-func NewKeyQueueWaiting(ns, queueName string) string {
-	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateWaiting)
-}
-
 func NewKeyQueueCompleted(ns, queueName string) string {
 	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateCompleted)
 }
@@ -397,11 +393,10 @@ func (it *BrokerRedis) DeleteQueue(ctx context.Context, queueName string) (err e
 //
 // KEYS[1] -> gmq:<queueName>:pending
 // KEYS[2] -> gmq:<queueName>:processing
-// KEYS[3] -> gmq:<queueName>:waiting
-// KEYS[4] -> gmq:<queueName>:completed
-// KEYS[5] -> gmq:<queueName>:failed
-// KEYS[6] -> gmq:<queueName>:msg:<msgId>
-// KEYS[7] -> gmq:<queueName>:uniq:<msgId>
+// KEYS[3] -> gmq:<queueName>:completed
+// KEYS[4] -> gmq:<queueName>:failed
+// KEYS[5] -> gmq:<queueName>:msg:<msgId>
+// KEYS[6] -> gmq:<queueName>:uniq:<msgId>
 //
 // ARGV[1] -> <msgId>
 var scriptDeleteMsg = redis.NewScript(`
@@ -409,20 +404,15 @@ redis.call("LREM", KEYS[1], 0, ARGV[1])
 redis.call("LREM", KEYS[2], 0, ARGV[1])
 redis.call("LREM", KEYS[3], 0, ARGV[1])
 redis.call("LREM", KEYS[4], 0, ARGV[1])
-redis.call("LREM", KEYS[5], 0, ARGV[1])
-redis.call("DEL", KEYS[7])
-if redis.call("DEL", KEYS[6]) == 0 then
-	return 1
-else
-	return 0
-end
+redis.call("DEL", KEYS[5])
+redis.call("DEL", KEYS[6])
+return 0
 `)
 
 func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (err error) {
 	keys := []string{
 		NewKeyQueuePending(it.namespace, queueName),
 		NewKeyQueueProcessing(it.namespace, queueName),
-		NewKeyQueueWaiting(it.namespace, queueName),
 		NewKeyQueueCompleted(it.namespace, queueName),
 		NewKeyQueueFailed(it.namespace, queueName),
 		NewKeyMsgDetail(it.namespace, queueName, msgId),
@@ -435,25 +425,18 @@ func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (
 
 	resI, err := scriptDeleteMsg.Run(ctx, it.cli, keys, argv...).Result()
 	if err != nil {
-		if err == redis.Nil {
-			err = ErrNoMsg
-			return
-		}
-		err = ErrInternal
-		return
+		return err
 	}
 
 	rt, ok := resI.(int64)
 	if !ok {
-		err = ErrInternal
-		return
+		return ErrInternal
 	}
 
 	if rt == LuaReturnCodeError {
-		err = ErrNoMsg
-		return
+		return ErrInternal
 	}
-	return
+	return nil
 }
 
 // scriptDelete delete a message.
@@ -697,7 +680,6 @@ type QueueStat struct {
 	Name       string
 	Total      int64 // all state of message store in Redis
 	Pending    int64 // wait to free worker consume it
-	Waiting    int64 // worker already took and wait for consuming rate restrict
 	Processing int64 // worker already took and consuming
 	Completed  int64 // consumed successfully
 	Failed     int64 // occured error, and/or pending to retry
@@ -744,18 +726,16 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 	rs = make([]*QueueStat, 0)
 	for _, queueName := range queueNames {
 		pending, _ := it.cli.LLen(ctx, NewKeyQueuePending(it.namespace, queueName)).Result()
-		waiting, _ := it.cli.LLen(ctx, NewKeyQueueWaiting(it.namespace, queueName)).Result()
 		processing, _ := it.cli.LLen(ctx, NewKeyQueueProcessing(it.namespace, queueName)).Result()
 		completed, _ := it.cli.Get(ctx, NewKeyDailyStatCompleted(it.namespace, queueName, today)).Int64()
 		failed, _ := it.cli.Get(ctx, NewKeyDailyStatFailed(it.namespace, queueName, today)).Int64()
 
-		total := pending + waiting + processing + completed + failed
+		total := pending + processing + completed + failed
 
 		rs = append(rs, &QueueStat{
 			Name:       queueName,
 			Total:      total,
 			Pending:    pending,
-			Waiting:    waiting,
 			Processing: processing,
 			Completed:  completed,
 			Failed:     failed,

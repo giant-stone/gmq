@@ -284,7 +284,6 @@ func TestBrokerInMemory_GetStats(t *testing.T) {
 	require.Equal(t, 1, len(rs))
 	stat := rs[0]
 	require.Equal(t, int64(1), stat.Pending)
-	require.Zero(t, stat.Waiting)
 	require.Zero(t, stat.Processing)
 	require.Zero(t, stat.Completed)
 	require.Zero(t, stat.Failed)
@@ -298,7 +297,6 @@ func TestBrokerInMemory_GetStats(t *testing.T) {
 	require.Equal(t, 1, len(rs))
 	stat = rs[0]
 	require.Equal(t, int64(1), stat.Pending)
-	require.Zero(t, stat.Waiting)
 	require.Zero(t, stat.Processing)
 	require.Zero(t, stat.Completed)
 	require.Zero(t, stat.Failed)
@@ -312,7 +310,6 @@ func TestBrokerInMemory_GetStats(t *testing.T) {
 	require.Equal(t, 1, len(rs))
 	stat = rs[0]
 	require.Zero(t, stat.Pending)
-	require.Zero(t, stat.Waiting)
 	require.Equal(t, int64(1), stat.Processing)
 	require.Zero(t, stat.Completed)
 	require.Zero(t, stat.Failed)
@@ -326,7 +323,6 @@ func TestBrokerInMemory_GetStats(t *testing.T) {
 	require.Equal(t, 1, len(rs))
 	stat = rs[0]
 	require.Zero(t, stat.Pending)
-	require.Zero(t, stat.Waiting)
 	require.Equal(t, int64(1), stat.Processing)
 	require.Zero(t, stat.Completed)
 	require.Zero(t, stat.Failed)
@@ -340,7 +336,6 @@ func TestBrokerInMemory_GetStats(t *testing.T) {
 	require.Equal(t, 1, len(rs))
 	stat = rs[0]
 	require.Zero(t, stat.Pending)
-	require.Zero(t, stat.Waiting)
 	require.Zero(t, stat.Processing)
 	require.Equal(t, int64(1), stat.Completed)
 	require.Zero(t, stat.Failed)
@@ -354,7 +349,6 @@ func TestBrokerInMemory_GetStats(t *testing.T) {
 	require.Equal(t, 1, len(rs))
 	stat = rs[0]
 	require.Zero(t, stat.Pending)
-	require.Zero(t, stat.Waiting)
 	require.Zero(t, stat.Processing)
 	require.Equal(t, int64(1), stat.Completed)
 	require.Zero(t, stat.Failed)

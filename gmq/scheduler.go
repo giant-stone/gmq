@@ -84,25 +84,32 @@ func (it *CronJob) Run() {
 }
 
 func (it *Scheduler) Register(cronSpec string, msg IMsg, opts ...OptionClient) (jobId string, err error) {
+	msgId := msg.GetId()
+	if msgId != "" {
+		jobId = msgId
+	} else {
+		jobId = uuid.NewString()
+	}
+
 	job := CronJob{
 		ctx:    it.ctx,
 		client: it.client,
 		logger: it.logger,
 		msg:    msg,
 		opts:   opts,
-		id:     uuid.NewString(),
+		id:     jobId,
 	}
+
 	entryId, err := it.cron.AddJob(cronSpec, &job)
 	if err != nil {
-		return
+		return "", err
 	}
 
 	it.lock.Lock()
 	defer it.lock.Unlock()
 
 	it.jobId2EntryIdMap[job.id] = entryId
-	jobId = job.id
-	return
+	return jobId, nil
 }
 
 func (it *Scheduler) Unregister(jobId string) (err error) {

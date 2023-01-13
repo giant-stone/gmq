@@ -23,7 +23,6 @@ type BrokerInMemory struct {
 	lock  sync.RWMutex
 
 	listPending    map[string]*list.List // key is queueName
-	listWaiting    map[string]*list.List
 	listProcessing map[string]*list.List
 	listCompleted  map[string]*list.List
 	listFailed     map[string]*list.List
@@ -52,7 +51,6 @@ func (it *BrokerInMemory) Close() error {
 	defer it.lock.Unlock()
 
 	it.listPending = nil
-	it.listWaiting = nil
 	it.listProcessing = nil
 	it.listCompleted = nil
 	it.listFailed = nil
@@ -152,7 +150,6 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 
 	for _, stateList := range []map[string]*list.List{
 		it.listPending,
-		it.listWaiting,
 		it.listProcessing,
 		it.listCompleted,
 		it.listFailed,
@@ -191,10 +188,6 @@ func (it *BrokerInMemory) DeleteMsg(ctx context.Context, queueName string, id st
 		removeElementFromList(l, msgId)
 	}
 
-	if l, ok := it.listWaiting[queueName]; ok {
-		removeElementFromList(l, msgId)
-	}
-
 	if l, ok := it.listProcessing[queueName]; ok {
 		removeElementFromList(l, msgId)
 	}
@@ -228,7 +221,6 @@ func (it *BrokerInMemory) DeleteQueue(ctx context.Context, queueName string) err
 
 	for _, stateList := range []map[string]*list.List{
 		it.listPending,
-		it.listWaiting,
 		it.listProcessing,
 		it.listCompleted,
 		it.listFailed,
@@ -452,14 +444,10 @@ func (it *BrokerInMemory) GetStats(ctx context.Context) ([]*QueueStat, error) {
 	rs := make([]*QueueStat, 0)
 
 	for _, queueName := range it.listQueues() {
-		var pending, waiting, processing, completed, failed, total int64
+		var pending, processing, completed, failed, total int64
 
 		if l, ok := it.listPending[queueName]; ok {
 			pending = int64(l.Len())
-		}
-
-		if l, ok := it.listWaiting[queueName]; ok {
-			waiting = int64(l.Len())
 		}
 
 		if l, ok := it.listProcessing[queueName]; ok {
@@ -474,13 +462,12 @@ func (it *BrokerInMemory) GetStats(ctx context.Context) ([]*QueueStat, error) {
 			failed = int64(l.Len())
 		}
 
-		total = pending + waiting + processing + completed + failed
+		total = pending + processing + completed + failed
 
 		rs = append(rs, &QueueStat{
 			Name:       queueName,
 			Total:      total,
 			Pending:    pending,
-			Waiting:    waiting,
 			Processing: processing,
 			Completed:  completed,
 			Failed:     failed,
@@ -566,10 +553,6 @@ func (it *BrokerInMemory) ListMsg(ctx context.Context, queueName string, state s
 		{
 			l, ok = it.listPending[queueName]
 		}
-	case MsgStateWaiting:
-		{
-			l, ok = it.listWaiting[queueName]
-		}
 	case MsgStateProcessing:
 		{
 			l, ok = it.listProcessing[queueName]
@@ -636,10 +619,6 @@ func (it *BrokerInMemory) updateQueueList(ctx context.Context, queueName string)
 		it.listPending[queueName] = list.New()
 	}
 
-	if _, ok := it.listWaiting[queueName]; !ok {
-		it.listWaiting[queueName] = list.New()
-	}
-
 	if _, ok := it.listProcessing[queueName]; !ok {
 		it.listProcessing[queueName] = list.New()
 	}
@@ -663,7 +642,6 @@ func NewBrokerInMemory(opts *BrokerInMemoryOpts) (rs Broker, err error) {
 		clock:          NewWallClock(),
 		lock:           sync.RWMutex{},
 		listPending:    make(map[string]*list.List),
-		listWaiting:    make(map[string]*list.List),
 		listProcessing: make(map[string]*list.List),
 		listCompleted:  make(map[string]*list.List),
 		listFailed:     make(map[string]*list.List),

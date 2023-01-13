@@ -219,7 +219,6 @@ func TestGmq_DeleteAgo(t *testing.T) {
 	require.Equal(t, msg.Queue, queueStat.Name)
 	require.Equal(t, int64(1), queueStat.Total)
 	require.Equal(t, int64(0), queueStat.Pending)
-	require.Equal(t, int64(0), queueStat.Waiting)
 	require.Equal(t, int64(0), queueStat.Processing)
 	require.Equal(t, int64(0), queueStat.Completed)
 	require.Equal(t, int64(1), queueStat.Failed)
@@ -244,7 +243,6 @@ func TestGmq_DeleteAgo(t *testing.T) {
 	require.Equal(t, msg.Queue, queueStat.Name)
 	require.Equal(t, int64(1), queueStat.Total)
 	require.Equal(t, int64(0), queueStat.Pending)
-	require.Equal(t, int64(0), queueStat.Waiting)
 	require.Equal(t, int64(0), queueStat.Processing)
 	require.Equal(t, int64(0), queueStat.Completed)
 	require.Equal(t, int64(1), queueStat.Failed)
@@ -454,7 +452,6 @@ func TestGmq_GetStats(t *testing.T) {
 	require.Equal(t, int64(1), qs.Failed)
 	require.Equal(t, int64(0), qs.Pending)
 	require.Equal(t, int64(0), qs.Processing)
-	require.Equal(t, int64(0), qs.Waiting)
 
 	_, err = broker.Enqueue(ctx, msgSucc)
 	require.NoError(t, err)
@@ -468,7 +465,6 @@ func TestGmq_GetStats(t *testing.T) {
 	require.Equal(t, int64(1), qs.Failed)
 	require.Equal(t, int64(0), qs.Pending)
 	require.Equal(t, int64(0), qs.Processing)
-	require.Equal(t, int64(0), qs.Waiting)
 
 	_, err = broker.Enqueue(ctx, msgProcessing)
 	require.NoError(t, err)
@@ -482,5 +478,4 @@ func TestGmq_GetStats(t *testing.T) {
 	require.Equal(t, int64(1), qs.Failed)
 	require.Equal(t, int64(0), qs.Pending)
 	require.Equal(t, int64(1), qs.Processing)
-	require.Equal(t, int64(0), qs.Waiting)
 }

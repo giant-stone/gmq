@@ -42,7 +42,6 @@ var (
 var (
 	msgStatList = []string{
 		gmq.MsgStatePending,
-		gmq.MsgStateWaiting,
 		gmq.MsgStateProcessing,
 		gmq.MsgStateCompleted,
 		gmq.MsgStateFailed,
@@ -166,11 +165,10 @@ func printStats(ctx context.Context, broker gmq.Broker) {
 		fmt.Println("Related info not found. Do consumer(s) have not start yet?")
 	} else {
 		for _, rsStat := range queues {
-			fmt.Printf("queue=%s total=%d pending=%d waiting=%d processing=%d completed=%d failed=%d \n",
+			fmt.Printf("queue=%s total=%d pending=%d processing=%d completed=%d failed=%d \n",
 				rsStat.Name,
 				rsStat.Total,
 				rsStat.Pending,
-				rsStat.Waiting,
 				rsStat.Processing,
 				rsStat.Completed,
 				rsStat.Failed,

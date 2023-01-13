@@ -13,15 +13,10 @@ const (
 	QueueNamePaused = "paused"
 )
 
-//
 // message state list
-//
 const (
 	// message init state
 	MsgStatePending = "pending"
-
-	// message take by worker from pending queue, wait for consuming rate restrict
-	MsgStateWaiting = "waiting"
 
 	// message is processing by worker
 	MsgStateProcessing = "processing"
