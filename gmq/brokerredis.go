@@ -216,7 +216,11 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 	var expiredAt int64
 	var resI interface{}
 	if uniqueInMs == 0 {
-		keys := []string{NewKeyMsgDetail(it.namespace, queueName, msgId), NewKeyQueuePending(it.namespace, queueName)}
+		keys := []string{
+			NewKeyMsgDetail(it.namespace, queueName, msgId),
+			NewKeyQueuePending(it.namespace, queueName),
+		}
+
 		args := []interface{}{
 			payload,
 			MsgStatePending,
@@ -230,6 +234,7 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 			NewKeyMsgDetail(it.namespace, queueName, msgId),
 			NewKeyQueuePending(it.namespace, queueName),
 		}
+
 		args := []interface{}{
 			uniqueInMs,
 			payload,
@@ -807,29 +812,25 @@ func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *Que
 // KEYS[3] -> gmq:<queueName>:failed
 // KEYS[4] -> gmq:<queueName>:failed:<YYYY-MM-DD>
 // --
-// ARGV[1] -> <msg expirations in duration in milliseconds>
+// ARGV[1] -> <msgId>
 // ARGV[2] -> "failed"
 // ARGV[3] -> die at <current unix time in milliseconds>
-// ARGV[4] -> <msgId>
-// ARGV[5] -> Info for failure
+// ARGV[4] -> Info for failure
 
 // Output:
 // Returns 0 if successfully enqueued
 // Returns 1 if task ID did not exists
 var scriptFail = redis.NewScript(`
-if redis.call("EXISTS", KEYS[1]) == 0 then
-	return 1
+if redis.call("EXISTS", KEYS[1]) == 1 then
+	redis.call("LREM", KEYS[2], 0, ARGV[1])
+	redis.call("LPUSH", KEYS[3], ARGV[1])
+	redis.call("INCR", KEYS[4])
+	redis.call("HSET", KEYS[1], "state", ARGV[2])
+	redis.call("HSET", KEYS[1], "dieat", ARGV[3])
+	redis.call("HSET", KEYS[1], "err", ARGV[4])
 end
-redis.call("LREM", KEYS[2], 0, ARGV[1])
-redis.call("LPUSH", KEYS[3], ARGV[1])
-redis.call("INCR", KEYS[4])
-redis.call("HSET", KEYS[1], "state", ARGV[2])
-redis.call("HSET", KEYS[1], "dieat", ARGV[3])
-redis.call("HSET", KEYS[1], "err", ARGV[4])
 return 0
 `)
-
-// use individual keys to save failed msg info and a limited zset to save failed id
 
 func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err error) {
 	msgId := msg.GetId()
@@ -858,27 +859,16 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 		errFail.Error(),
 	}
 
-	resI, err := scriptFail.Run(ctx, it.cli, keys, args...).Result()
+	_, err = scriptFail.Run(ctx, it.cli, keys, args...).Result()
 	if err != nil {
-		if err == redis.Nil {
-			err = ErrNoMsg
-			return err
+		if err == redis.ErrClosed {
+			return nil
 		}
-		err = ErrInternal
+
 		return err
 	}
 
-	rt, ok := resI.(int64)
-	if !ok {
-		err = ErrInternal
-		return err
-	}
-
-	if rt == LuaReturnCodeError {
-		err = ErrNoMsg
-		return err
-	}
-	return errFail
+	return nil
 }
 
 func NewClientRedis(dsn string) (rs *Client, err error) {
