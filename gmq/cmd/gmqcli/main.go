@@ -258,7 +258,7 @@ func listMsg(ctx context.Context, broker gmq.Broker, queueName string) {
 		gutil.ExitOnErr(err)
 	}
 
-	fmt.Printf("list queue: %s\n\n", gmq.NewKeyQueueState(gmq.Namespace, queueName, state))
+	fmt.Printf("list messages of queue=%s state=%s \n\n", queueName, state)
 	for _, msg := range msgs {
 		fmt.Println(msg)
 	}
