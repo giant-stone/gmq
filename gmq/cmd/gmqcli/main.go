@@ -50,7 +50,7 @@ var (
 
 func main() {
 	flag.StringVar(&loglevel, "l", "debug", "loglevel debug,info,warn,error")
-	flag.StringVar(&dsnRedis, "d", "redis://192.168.31.80:6379/0", "redis DSN")
+	flag.StringVar(&dsnRedis, "d", "redis://127.0.0.1:6379/0", "redis DSN")
 
 	// commands
 	flag.BoolVar(&cmdPrintStats, "stat", false, "print queue stats")
