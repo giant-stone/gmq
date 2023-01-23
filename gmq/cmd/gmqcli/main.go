@@ -50,7 +50,7 @@ var (
 
 func main() {
 	flag.StringVar(&loglevel, "l", "debug", "loglevel debug,info,warn,error")
-	flag.StringVar(&dsnRedis, "d", "redis://127.0.0.1:6379/0", "redis DSN")
+	flag.StringVar(&dsnRedis, "d", "redis://192.168.31.80:6379/0", "redis DSN")
 
 	// commands
 	flag.BoolVar(&cmdPrintStats, "stat", false, "print queue stats")
@@ -71,7 +71,7 @@ func main() {
 	stateList := strings.Join(msgStatList, ",")
 	flag.StringVar(&state, "s", "failed", fmt.Sprintf("must be one of %s, required for -listmsg, queue state to search", stateList))
 
-	flag.Int64Var(&limit, "n", 20, "use with -listmsg, maximum number of messages to display, default to display all, if limit <=0, display all the messages after offset ")
+	flag.Int64Var(&limit, "n", 20, "use with -listmsg, maximum number of messages to display, default is 20")
 	flag.Uint64Var(&offset, "o", 0, "use with -listmsg, first messages offset to display, start with 0")
 
 	flag.BoolVar(&useUTC, "u", false, "process time in UTC instead of local")
@@ -81,7 +81,8 @@ func main() {
 
 	glogging.Init([]string{"stdout"}, glogging.Loglevel(loglevel))
 
-	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdListMsg && !cmdDelMsg && !cmdDelQueue && cmdPauseq != "" && cmdResumeq != "" && !cmdStatsWeekly {
+	if !cmdPrintStats && !cmdAddMsg && !cmdGetMsg && !cmdListMsg && !cmdDelMsg &&
+		!cmdDelQueue && cmdPauseq != "" && cmdResumeq != "" && !cmdStatsWeekly {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -160,18 +161,16 @@ func printStats(ctx context.Context, broker gmq.Broker) {
 	gutil.ExitOnErr(err)
 
 	fmt.Print("\n# gmq Statistic \n\n")
-	fmt.Print("## Daily Statistic \n\n")
+	fmt.Print("## Weekly Statistic \n\n")
 	if len(queues) == 0 {
 		fmt.Println("Related info not found. Do consumer(s) have not start yet?")
 	} else {
 		for _, rsStat := range queues {
-			fmt.Printf("queue=%s total=%d pending=%d processing=%d completed=%d failed=%d \n",
+			fmt.Printf("queue=%s total=%d pending=%d processing=%d \n",
 				rsStat.Name,
 				rsStat.Total,
 				rsStat.Pending,
 				rsStat.Processing,
-				rsStat.Completed,
-				rsStat.Failed,
 			)
 		}
 		printStatsWeekly(ctx, broker)
