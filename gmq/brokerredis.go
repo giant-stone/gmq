@@ -2,6 +2,7 @@ package gmq
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -47,12 +48,17 @@ func NewKeyQueueFailed(ns, queueName string) string {
 	return fmt.Sprintf("%s:%s:%s", ns, queueName, MsgStateFailed)
 }
 
-// gmq:<queueName>:completed:<YYYY-MM-DD>
+// <namespace>:<queueName>:his:<msgId>
+func NewKeyQueueFailedHistory(ns, queueName, msgId string) string {
+	return fmt.Sprintf("%s:%s:his:%s", ns, queueName, msgId)
+}
+
+// <namespace>:<queueName>:completed:<YYYY-MM-DD>
 func NewKeyDailyStatCompleted(ns, queueName, YYYYMMDD string) string {
 	return fmt.Sprintf("%s:%s", NewKeyQueueCompleted(ns, queueName), YYYYMMDD)
 }
 
-// gmq:<queueName>:failed:<YYYY-MM-DD>
+// <namespace>:<queueName>:failed:<YYYY-MM-DD>
 func NewKeyDailyStatFailed(ns, queueName, YYYYMMDD string) string {
 	return fmt.Sprintf("%s:%s", NewKeyQueueFailed(ns, queueName), YYYYMMDD)
 }
@@ -93,6 +99,55 @@ type BrokerRedis struct {
 	utc bool
 }
 
+func (it *BrokerRedis) getNow() time.Time {
+	now := it.clock.Now()
+	if it.utc {
+		now = now.UTC()
+	} else {
+		now = now.Local()
+	}
+
+	return now
+}
+
+// ListQueue implements Broker
+func (it *BrokerRedis) ListQueue(ctx context.Context) (rs []string, err error) {
+	return it.listQueues(ctx)
+}
+
+func (it *BrokerRedis) ListFailed(ctx context.Context, queueName string, msgId string, limit int64, offset int64) (rs []*Msg, err error) {
+	if limit <= 0 {
+		limit = DefaultLimit - 1
+	}
+	if offset <= 0 {
+		offset = 0
+	}
+
+	key := NewKeyQueueFailedHistory(it.namespace, queueName, msgId)
+	rs = make([]*Msg, 0)
+
+	items, err := it.cli.LRange(ctx, key, offset, limit).Result()
+	if err != nil {
+		if err == redis.ErrClosed {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	for _, item := range items {
+		msg := &Msg{}
+		err = json.Unmarshal([]byte(item), msg)
+		if err != nil {
+			return nil, err
+		}
+		msg.Queue = queueName
+		msg.Id = msgId
+		rs = append(rs, msg)
+	}
+
+	return rs, nil
+}
+
 // UTC implements Broker
 func (it *BrokerRedis) UTC(flag bool) {
 	it.utc = flag
@@ -115,11 +170,11 @@ func (it *BrokerRedis) updateQueueList(ctx context.Context, queueName string) (e
 	return
 }
 
-// scriptEnqueue enqueues a message.
+// script(Enqueue) enqueues a message.
 //
 // Input:
-// KEYS[1] -> gmq:<queueName>:msg:<msgId>
-// KEYS[2] -> gmq:<queueName>:pending
+// KEYS[1] -> <namespace>:<queueName>:msg:<msgId>
+// KEYS[2] -> <namespace>:<queueName>:pending
 // --
 // ARGV[1] -> <message payload>
 // ARGV[2] -> "pending"
@@ -128,7 +183,9 @@ func (it *BrokerRedis) updateQueueList(ctx context.Context, queueName string) (e
 //
 // Output:
 // Returns 0 if successfully enqueued
-// Returns 1 if task ID already exists
+// Returns 1 if message ID already exists
+//
+//	list item order from left to right, head to tail, fresh to old.
 var scriptEnqueue = redis.NewScript(`
 if redis.call("EXISTS", KEYS[1]) == 1 then
 	return 1
@@ -146,9 +203,9 @@ return 0
 // scriptEnqueueUnique enqueues a message with unique in duration constraint
 //
 // Input:
-// KEYS[1] -> gmq:<queueName>:uniq:<msgId>
-// KEYS[2] -> gmq:<queueName>:msg:<msgId>
-// KEYS[3] -> gmq:<queueName>:pending
+// KEYS[1] -> <namespace>:<queueName>:uniq:<msgId>
+// KEYS[2] -> <namespace>:<queueName>:msg:<msgId>
+// KEYS[3] -> <namespace>:<queueName>:pending
 // --
 // ARGV[1] -> <msg unique in duration in milliseconds>
 // ARGV[2] -> <message payload>
@@ -159,7 +216,7 @@ return 0
 //
 // Output:
 // Returns 0 if successfully enqueued
-// Returns 1 if task ID already exists
+// Returns 1 if message ID already exists
 var scriptEnqueueUnique = redis.NewScript(`
 if redis.call("EXISTS", KEYS[1]) == 1 then
 	return 1
@@ -171,7 +228,7 @@ redis.call("HSET", KEYS[2],
            "created", ARGV[4],
 					 "updated", ARGV[4],
 					 "expireat", ARGV[5])
-redis.call("LPUSH", KEYS[3], ARGV[6])
+redis.call("RPUSH", KEYS[3], ARGV[6])
 return 0
 `)
 
@@ -282,28 +339,31 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 // scriptDequeue dequeues a message.
 //
 // Input:
-// KEYS[1] -> gmq:<queueName>:pending
-// KEYS[2] -> gmq:<queueName>:paused
-// KEYS[3] -> gmq:<queueName>:processing
+// KEYS[1] -> <namespace>:<queueName>:pending
+// KEYS[2] -> <namespace>:<queueName>:paused
+// KEYS[3] -> <namespace>:<queueName>:processing
 // --
-// ARGV[1] -> message key prefix
+// ARGV[1] -> message detail key prefix
+// ARGV[2] -> state "processing"
+// ARGV[3] -> update at <current unix time in milliseconds>
 //
 // Output:
-// Returns nil if no processable task is found in the given queue.
-// Returns an encoded TaskMessage.
+// Returns nil if no processable message is found in the given queue.
+// Returns an encoded Message.
 var scriptDequeue = redis.NewScript(`
 if redis.call("EXISTS", KEYS[2]) == 0 then
 	local id = redis.call("RPOPLPUSH", KEYS[1], KEYS[3])
 	if id then
 		local key = ARGV[1] .. id
-		redis.call("HSET", key, "state", "processing")
-		redis.call("HSET", key, "updated", ARGV[2])
+		redis.call("HSET", key, "state", ARGV[2], "updated", ARGV[3])
 		return {id, redis.call("HGETALL", key)}
 	end
 end
 return nil`)
 
 func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg, err error) {
+	nowInUnixMilli := it.getNow().UnixMilli()
+
 	keys := []string{
 		NewKeyQueuePending(it.namespace, queueName),
 		NewKeyQueuePaused(it.namespace, queueName),
@@ -311,7 +371,8 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	}
 	args := []interface{}{
 		NewKeyMsgDetail(it.namespace, queueName, ""),
-		it.clock.Now().UnixMilli(),
+		MsgStateProcessing,
+		nowInUnixMilli,
 	}
 
 	resI, err := scriptDequeue.Run(ctx, it.cli, keys, args...).Result()
@@ -334,43 +395,24 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 	}
 
 	msgId, _ := res[0].(string)
-	arrayOfString, _ := res[1].([]interface{})
-	n := len(arrayOfString)
-	if msgId == "" || n == 0 || n%2 != 0 {
-		// TODO: move this message into internal damaged queue
+	if msgId == "" {
 		return nil, ErrInternal
 	}
 
-	values := map[string]interface{}{}
-	for i := 0; i+2 <= n; i += 2 {
-		key, ok := arrayOfString[i].(string)
-		if !ok {
-			return nil, ErrInternal
-		}
-		value := arrayOfString[i+1]
-		values[key] = value
+	rawMsg, err := parseMsgFromRedisLuaHgetallResult(res[1])
+	if err != nil {
+		return nil, err
 	}
 
-	payload, _ := values["payload"].(string)
-	state, _ := values["state"].(string)
-	created, _ := values["created"].(string)
-	updated, _ := values["updated"].(string)
-	expiredat, _ := values["expiredat"].(string)
-
-	return &Msg{
-		Payload:   []byte(payload),
-		Id:        msgId,
-		Queue:     queueName,
-		State:     state,
-		Created:   gstr.Atoi64(created),
-		Expiredat: gstr.Atoi64(expiredat),
-		Updated:   gstr.Atoi64(updated),
-	}, nil
+	rawMsg.Id = msgId
+	rawMsg.Queue = queueName
+	rawMsg.State = MsgStateProcessing
+	rawMsg.Updated = nowInUnixMilli
+	return rawMsg, nil
 }
 
 // scriptDeleteQueue delete a queue
-// KEYS[1] -> gmq:queuename:*
-
+// KEYS[1] -> <namespace>:<queuename>:*
 var scriptDeleteQueue = redis.NewScript(`
 	for k,v in ipairs(KEYS) do 
 		redis.call('del', KEYS[k])
@@ -401,21 +443,19 @@ func (it *BrokerRedis) DeleteQueue(ctx context.Context, queueName string) (err e
 
 // scriptDeleteMsg delete a message.
 //
-// KEYS[1] -> gmq:<queueName>:pending
-// KEYS[2] -> gmq:<queueName>:processing
-// KEYS[3] -> gmq:<queueName>:completed
-// KEYS[4] -> gmq:<queueName>:failed
-// KEYS[5] -> gmq:<queueName>:msg:<msgId>
-// KEYS[6] -> gmq:<queueName>:uniq:<msgId>
+// KEYS[1] -> <namespace>:<queueName>:pending
+// KEYS[2] -> <namespace>:<queueName>:processing
+// KEYS[3] -> <namespace>:<queueName>:failed
+// KEYS[4] -> <namespace>:<queueName>:msg:<msgId>
+// KEYS[5] -> <namespace>:<queueName>:uniq:<msgId>
 //
 // ARGV[1] -> <msgId>
 var scriptDeleteMsg = redis.NewScript(`
 redis.call("LREM", KEYS[1], 0, ARGV[1])
 redis.call("LREM", KEYS[2], 0, ARGV[1])
 redis.call("LREM", KEYS[3], 0, ARGV[1])
-redis.call("LREM", KEYS[4], 0, ARGV[1])
+redis.call("DEL", KEYS[4])
 redis.call("DEL", KEYS[5])
-redis.call("DEL", KEYS[6])
 return 0
 `)
 
@@ -423,7 +463,6 @@ func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (
 	keys := []string{
 		NewKeyQueuePending(it.namespace, queueName),
 		NewKeyQueueProcessing(it.namespace, queueName),
-		NewKeyQueueCompleted(it.namespace, queueName),
 		NewKeyQueueFailed(it.namespace, queueName),
 		NewKeyMsgDetail(it.namespace, queueName, msgId),
 		NewKeyMsgUnique(it.namespace, queueName, msgId),
@@ -449,23 +488,26 @@ func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (
 	return nil
 }
 
-// scriptDelete delete a message.
+// scriptDeleteAgo delete messages old than <nowUnixTimestamp - duration>.
 //
-// KEYS[1] -> gmq:<queueName>:failed
-// KEYS[2] -> gmq:<queueName>:processing
-// KEYS[3] -> created
+// KEYS[1] -> <namespace>:<queueName>:pending
+// KEYS[2] -> <namespace>:<queueName>:processing
 // KEYS[i]   -> <msgId1>
 // KEYS[i+1] -> <keyMsgDetail1>
 // ...
 //
 // ARGV[1] -> cutoff
 // ARGV[2] -> Length of KEYS
-var scriptCheckAndDelete = redis.NewScript(`
-for i=4, ARGV[2], 2 do
-	local created = redis.call("HGET", KEYS[i+1], KEYS[3])
-	if (created and tonumber(created) <= tonumber(ARGV[1])) then
+// ARGV[3] -> "created"
+// ARGV[4] -> "expireat"
+var scriptDeleteAgo = redis.NewScript(`
+local totalKeys = tonumber(ARGV[2])
+for i=6, totalKeys, 2 do
+	local keyMsgDetail = KEYS[i+1]
+	local created = redis.call("HGET", keyMsgDetail, ARGV[3])
+	local expireat = redis.call("HGET", keyMsgDetail, ARGV[4])
+	if (created and tonumber(created) <= tonumber(ARGV[1])) or (expireat and tonumber(expireat) <= tonumber(ARGV[1])) then
 		local msgId = KEYS[i]
-		local keyMsgDetail = KEYS[i+1]
 		redis.call("DEL", keyMsgDetail)
 		redis.call("LREM", KEYS[1], 0, msgId)
 		redis.call("LREM", KEYS[2], 0, msgId)
@@ -474,34 +516,28 @@ end
 return 0
 `)
 
-// delete entries old than first entry of pending
+// delete messages old than <nowUnixTimestamp - duration>
 func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, duration time.Duration) error {
-	now := it.clock.Now()
-	if it.utc {
-		now = now.UTC()
-	} else {
-		now = now.Local()
-	}
-
+	now := it.getNow()
 	cutoff := now.Add(-duration).UnixMilli()
 
 	states := []string{
-		NewKeyQueueFailed(it.namespace, queueName),
+		NewKeyQueuePending(it.namespace, queueName),
 		NewKeyQueueProcessing(it.namespace, queueName),
 	}
-	keys := []string{
-		states[0],
-		states[1],
-		"created",
-	}
 
-	step := int64(10000)
+	limit := int64(1000)
+
 	for _, state := range states {
-		start := int64(0)
-		stop := step
-
 		for {
-			tmp, err := it.cli.LRange(ctx, state, start, stop).Result()
+			keys := []string{
+				states[0],
+				states[1],
+				"created",
+				"expireat",
+			}
+
+			msgIds, err := it.cli.LRange(ctx, state, 0, limit).Result()
 			if err != nil {
 				if err == redis.ErrClosed {
 					return nil
@@ -509,36 +545,90 @@ func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, duration
 				return err
 			}
 
-			for i := range tmp {
-				msgId := tmp[i]
-				keys = append(keys, msgId, NewKeyMsgDetail(it.namespace, queueName, msgId))
-			}
-
-			if len(tmp) < int(step) {
+			if len(msgIds) == 0 {
 				break
 			}
 
-			start += step
-			stop += step
+			for i := range msgIds {
+				msgId := msgIds[i]
+				keys = append(keys, msgId, NewKeyMsgDetail(it.namespace, queueName, msgId))
+			}
+
+			if len(keys) == 4 {
+				break
+			}
+
+			args := []interface{}{
+				cutoff,
+				len(keys),
+			}
+
+			_, err = scriptDeleteAgo.Run(ctx, it.cli, keys, args).Result()
+			if err != nil {
+				return err
+			}
 		}
 	}
 
-	if len(keys) == 3 {
-		return nil
+	keyFailed := NewKeyQueueFailed(it.namespace, queueName)
+	for {
+		msgIds, err := it.cli.LRange(ctx, keyFailed, 0, limit).Result()
+		if err != nil {
+			return err
+		}
+
+		if len(msgIds) == 0 {
+			break
+		}
+
+		for _, msgId := range msgIds {
+			keyFailedHis := NewKeyQueueFailedHistory(it.namespace, queueName, msgId)
+
+			items, err := it.cli.LRange(ctx, keyFailedHis, 0, limit).Result()
+			if err != nil {
+				if err == redis.ErrClosed {
+					return nil
+				}
+				return err
+			}
+			if len(items) == 0 {
+				break
+			}
+
+			rawMsg := &Msg{}
+			err = json.Unmarshal([]byte(items[0]), rawMsg)
+			if err != nil {
+				return err
+			}
+
+			// delete this mesasge all history
+			if (rawMsg.Created > 0 && rawMsg.Created < cutoff) || (rawMsg.Expiredat > 0 && rawMsg.Expiredat <= cutoff) {
+				_, err := it.cli.Del(ctx, keyFailedHis).Result()
+				if err != nil {
+					return err
+				}
+				_, err = it.cli.LRem(ctx, keyFailed, 0, msgId).Result()
+				if err != nil {
+					return err
+				}
+				continue
+			}
+
+			// delete this mesasge expired history records
+			for _, item := range items {
+				msg := &Msg{}
+				err = json.Unmarshal([]byte(item), msg)
+				if err != nil {
+					return err
+				}
+
+				if (rawMsg.Created > 0 && rawMsg.Created < cutoff) || (rawMsg.Expiredat > 0 && rawMsg.Expiredat <= cutoff) {
+					it.cli.LRem(ctx, keyFailedHis, 0, item)
+				}
+			}
+		}
 	}
 
-	args := []interface{}{
-		cutoff,
-		len(keys),
-	}
-	resI, err := scriptCheckAndDelete.Run(ctx, it.cli, keys, args).Result()
-	if err != nil {
-		return err
-	}
-	_, ok := resI.(int64)
-	if !ok {
-		return ErrInternal
-	}
 	return nil
 }
 
@@ -573,9 +663,9 @@ func (it *BrokerRedis) Resume(ctx context.Context, qname string) error {
 
 // scriptComplete marks a message consumed successfully.
 //
-// KEYS[1] -> gmq:<queueName>:processing
-// KEYS[2] -> gmq:<queueName>:msg:<msgId>
-// KEYS[3] -> gmq:<queueName>:completed:<YYYY-MM-DD>
+// KEYS[1] -> <namespace>:<queueName>:processing
+// KEYS[2] -> <namespace>:<queueName>:msg:<msgId>
+// KEYS[3] -> <namespace>:<queueName>:completed:<YYYY-MM-DD>
 //
 // ARGV[1] -> <msgId>
 var scriptComplete = redis.NewScript(`
@@ -669,8 +759,12 @@ func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg
 
 func (it *BrokerRedis) ListMsg(ctx context.Context, queueName, state string, offset, limit int64) (values []string, err error) {
 	if limit <= 0 {
-		limit = -1
+		limit = DefaultLimit - 1
 	}
+	if offset <= 0 {
+		offset = 0
+	}
+
 	values, err = it.cli.LRange(ctx, NewKeyQueueState(it.namespace, queueName, state), offset, limit).Result()
 	if err != nil {
 		if err != redis.Nil {
@@ -685,6 +779,7 @@ type QueueStat struct {
 	Total      int64 // all state of message store in Redis
 	Pending    int64 // wait to free worker consume it
 	Processing int64 // worker already took and consuming
+	Failed     int64 // occured error, and/or pending to retry
 }
 
 func (it *BrokerRedis) listQueues(ctx context.Context) (rs []string, err error) {
@@ -709,25 +804,20 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 		return
 	}
 
-	now := it.clock.Now()
-	if it.utc {
-		now = now.UTC()
-	} else {
-		now = now.Local()
-	}
-
 	rs = make([]*QueueStat, 0)
 	for _, queueName := range queueNames {
 		pending, _ := it.cli.LLen(ctx, NewKeyQueuePending(it.namespace, queueName)).Result()
 		processing, _ := it.cli.LLen(ctx, NewKeyQueueProcessing(it.namespace, queueName)).Result()
+		failed, _ := it.cli.LLen(ctx, NewKeyQueueFailed(it.namespace, queueName)).Result()
 
-		total := pending + processing
+		total := pending + processing + failed
 
 		rs = append(rs, &QueueStat{
 			Name:       queueName,
 			Total:      total,
 			Pending:    pending,
 			Processing: processing,
+			Failed:     failed,
 		})
 	}
 	return
@@ -794,13 +884,14 @@ func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *Que
 
 // scriptFail enqueues a failed message
 // Input:
-// KEYS[1] -> gmq:<queueName>:msg:<msgId>
-// KEYS[2] -> gmq:<queueName>:processing
-// KEYS[3] -> gmq:<queueName>:failed
-// KEYS[4] -> gmq:<queueName>:failed:<YYYY-MM-DD>
+// KEYS[1] -> <namespace>:<queueName>:msg:<msgId>
+// KEYS[2] -> <namespace>:<queueName>:processing
+// KEYS[3] -> <namespace>:<queueName>:failed
+// KEYS[4] -> <namespace>:<queueName>:failed:<YYYY-MM-DD>
+// KEYS[5] -> <namespace>:<queueName>:failed:<msgId>
 // --
 // ARGV[1] -> <msgId>
-// ARGV[2] -> "failed"
+// ARGV[2] -> state "failed"
 // ARGV[3] -> die at <current unix time in milliseconds>
 // ARGV[4] -> Info for failure
 
@@ -812,22 +903,18 @@ if redis.call("EXISTS", KEYS[1]) == 1 then
 	redis.call("LREM", KEYS[2], 0, ARGV[1])
 	redis.call("LPUSH", KEYS[3], ARGV[1])
 	redis.call("INCR", KEYS[4])
-	redis.call("HSET", KEYS[1], "state", ARGV[2])
-	redis.call("HSET", KEYS[1], "dieat", ARGV[3])
-	redis.call("HSET", KEYS[1], "err", ARGV[4])
+
+	local msg = redis.call('HGETALL', KEYS[1])
+	redis.call('DEL', KEYS[1])
+	return msg
 end
-return 0
+return nil
 `)
 
 func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err error) {
 	msgId := msg.GetId()
 
-	now := it.clock.Now()
-	if it.utc {
-		now = now.UTC()
-	} else {
-		now = now.Local()
-	}
+	now := it.getNow()
 
 	today := now.Format("2006-01-02")
 
@@ -841,12 +928,9 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 
 	args := []interface{}{
 		msgId,
-		MsgStateFailed,
-		it.clock.Now().UnixMilli(),
-		errFail.Error(),
 	}
 
-	_, err = scriptFail.Run(ctx, it.cli, keys, args...).Result()
+	reply, err := scriptFail.Run(ctx, it.cli, keys, args...).Result()
 	if err != nil {
 		if err == redis.ErrClosed {
 			return nil
@@ -855,7 +939,55 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 		return err
 	}
 
+	rawMsg, err := parseMsgFromRedisLuaHgetallResult(reply)
+	if err != nil {
+		return err
+	}
+
+	rawMsg.State = MsgStateFailed
+	rawMsg.Updated = now.UnixMilli()
+	rawMsg.Err = errFail.Error()
+
+	dat, _ := json.Marshal(rawMsg)
+	_, err = it.cli.LPush(ctx, NewKeyQueueFailedHistory(it.namespace, queueName, msgId), dat).Result()
+	if err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func parseMsgFromRedisLuaHgetallResult(pairs interface{}) (msg *Msg, err error) {
+	arrayOfString, _ := pairs.([]interface{})
+	n := len(arrayOfString)
+	if n == 0 || n%2 != 0 {
+		return nil, ErrInternal
+	}
+
+	values := map[string]interface{}{}
+	for i := 0; i+2 <= n; i += 2 {
+		key, ok := arrayOfString[i].(string)
+		if !ok {
+			return nil, ErrInternal
+		}
+
+		value := arrayOfString[i+1]
+		values[key] = value
+	}
+
+	payload, _ := values["payload"].(string)
+	state, _ := values["state"].(string)
+	created, _ := values["created"].(string)
+	updated, _ := values["updated"].(string)
+	expiredat, _ := values["expiredat"].(string)
+
+	return &Msg{
+		Payload:   []byte(payload),
+		State:     state,
+		Created:   gstr.Atoi64(created),
+		Expiredat: gstr.Atoi64(expiredat),
+		Updated:   gstr.Atoi64(updated),
+	}, nil
 }
 
 func NewClientRedis(dsn string) (rs *Client, err error) {

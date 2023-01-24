@@ -72,6 +72,16 @@ func TestBrokerInMemory_Fail(t *testing.T) {
 	testBroker_Fail(t, broker)
 }
 
+func TestBrokerInMemory_ListQueue(t *testing.T) {
+	broker := getTestBrokerInMemory(t)
+	testBroker_ListQueue(t, broker)
+}
+
+func TestBrokerInMemory_ListFailed(t *testing.T) {
+	broker := getTestBrokerInMemory(t)
+	testBroker_ListFailed(t, broker)
+}
+
 func TestBrokerInMemory_GetStats(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	testBroker_GetStats(t, broker)
@@ -80,4 +90,19 @@ func TestBrokerInMemory_GetStats(t *testing.T) {
 func TestBrokerInMemory_GetStatsByDate(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	testBroker_GetStatsByDate(t, broker)
+}
+
+func TestBrokerInMemory_AutoDeduplicateMsgByDefault(t *testing.T) {
+	broker := getTestBrokerInMemory(t)
+	testBroker_AutoDeduplicateMsgByDefault(t, broker)
+}
+
+func TestBrokerInMemory_AutoDeduplicateFailedMsg(t *testing.T) {
+	broker := getTestBrokerInMemory(t)
+	testBroker_AutoDeduplicateFailedMsg(t, broker)
+}
+
+func TestBrokerInMemory_AutoDeduplicateCompletedMsg(t *testing.T) {
+	broker := getTestBrokerInMemory(t)
+	testBroker_AutoDeduplicateCompletedMsg(t, broker)
 }

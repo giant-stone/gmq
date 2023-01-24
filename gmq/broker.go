@@ -13,6 +13,10 @@ const (
 	TTLDeadMsg = 60 * 60 * 24 * 3 // 3 days
 )
 
+const (
+	DefaultLimit = 20
+)
+
 type Broker interface {
 	Close() error
 	Complete(ctx context.Context, msg IMsg) error
@@ -27,6 +31,12 @@ type Broker interface {
 
 	// return a list message id(not internal msgId) of queue with specified name and limit
 	ListMsg(ctx context.Context, queueName, state string, limit, offset int64) ([]string, error)
+
+	// return a list failed message id of queue with specified queue name and message id
+	// NOTICE: It is ordered from fresh to old.
+	ListFailed(ctx context.Context, queueName, msgId string, limit, offset int64) ([]*Msg, error)
+
+	ListQueue(ctx context.Context) ([]string, error)
 
 	GetStats(ctx context.Context) ([]*QueueStat, error)
 	Init(ctx context.Context, queueName string) error

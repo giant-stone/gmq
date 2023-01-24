@@ -14,29 +14,77 @@ const (
 	DefaultMaxBytes = 1024 * 1024 * 32 // 32 MB
 )
 
+type MsgHistory map[string]*list.List // key is <msgId>, value is <msg>
+
 type BrokerInMemory struct {
 	BrokerUnimplemented
 
 	clock Clock
-	utc   bool
-	lock  sync.RWMutex
 
-	listPending    map[string]*list.List // key is queueName
+	failedHistory map[string]MsgHistory // key is <queueName>
+
+	utc  bool
+	lock sync.RWMutex
+
+	listPending    map[string]*list.List // key is <queueName>, list.Element value is <messageId>
 	listProcessing map[string]*list.List
 	listFailed     map[string]*list.List
 
-	listStat map[string]*list.List // key is queueName, list.Element value is *QueueDailyStat
+	listStat map[string]*list.List // key is <queueName>, list.Element value is *QueueDailyStat
 
-	msgDetail map[string]*Msg // key is message id
+	msgDetail map[string]map[string]*Msg  // key is <queueName>, value is <msgId> => <msg>
+	msgUniq   map[string]map[string]int64 // key is <queueName>, value is <msgId> => <expireat>
 
 	maxBytes int64
 
-	queuesPaused map[string]struct{} // key is queueName
+	queuesPaused map[string]struct{} // key is <queueName>
+}
+
+// ListQueue implements Broker
+func (it *BrokerInMemory) ListQueue(ctx context.Context) (rs []string, err error) {
+	it.lock.RLock()
+	defer it.lock.RUnlock()
+
+	rs = make([]string, 0)
+	for key := range it.listStat {
+		rs = append(rs, key)
+	}
+	return rs, nil
 }
 
 // UTC implements Broker
 func (it *BrokerInMemory) UTC(flag bool) {
 	it.utc = flag
+}
+
+// ListFailed implements Broker
+func (it *BrokerInMemory) ListFailed(ctx context.Context, queueName string, msgId string, limit int64, offset int64) (rs []*Msg, err error) {
+	it.lock.RLock()
+	defer it.lock.RUnlock()
+
+	rs = make([]*Msg, 0)
+	n := int64(0)
+	o := int64(0)
+	if msgHistory, ok := it.failedHistory[queueName]; ok {
+		if l, ok := msgHistory[msgId]; ok {
+			for e := l.Back(); e != nil; e = e.Prev() {
+				if offset > 0 && o < offset {
+					o += 1
+					continue
+				}
+
+				msg := e.Value.(*Msg)
+				rs = append(rs, msg)
+				n += 1
+
+				if n > limit {
+					break
+				}
+			}
+		}
+	}
+
+	return rs, nil
 }
 
 type BrokerInMemoryOpts struct {
@@ -65,36 +113,64 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 	it.lock.Lock()
 	defer it.lock.Unlock()
 
-	now := it.clock.Now()
-	if it.utc {
-		now = now.UTC()
-	} else {
-		now = now.Local()
-	}
-
+	now := it.getNow()
 	nowInMs := now.UnixMilli()
+
+	cutoff := now.Add(-duration).UnixMilli()
 
 	for _, stateList := range []map[string]*list.List{
 		it.listPending,
 		it.listProcessing,
-		it.listFailed,
 	} {
 		if l, ok := stateList[queueName]; ok {
 			for e := l.Front(); e != nil; e = e.Next() {
 				msgId := e.Value.(string)
-				rawMsg := it.msgDetail[msgId]
 
-				if rawMsg.Expiredat > 0 && rawMsg.Expiredat > nowInMs {
+				msgs := it.msgDetail[queueName]
+				rawMsg := msgs[msgId]
+
+				if rawMsg.Expiredat > nowInMs {
 					continue
-				} else if rawMsg.Expiredat == 0 {
-					expiredat := time.UnixMilli(rawMsg.Created).Add(duration).UnixMilli()
-					if expiredat > nowInMs {
-						continue
-					}
+				} else if rawMsg.Expiredat == 0 && rawMsg.Created > cutoff {
+					continue
 				}
 
-				removeElementFromList(l, msgId)
-				delete(it.msgDetail, msgId)
+				removeStringElementFromList(l, msgId)
+				delete(msgs, msgId)
+				delete(it.msgUniq[queueName], msgId)
+			}
+		}
+	}
+
+	msgHistory := it.failedHistory[queueName]
+	for eMsgId := it.listFailed[queueName].Front(); eMsgId != nil; eMsgId = eMsgId.Next() {
+		msgId := eMsgId.Value.(string)
+
+		if l, ok := msgHistory[msgId]; ok {
+			e := l.Front()
+			if e != nil {
+				rawMsg := e.Value.(*Msg)
+
+				a := rawMsg.Expiredat > 0 && rawMsg.Expiredat < nowInMs
+				b := rawMsg.Expiredat == 0 && rawMsg.Created < cutoff
+				hasExpired := a || b
+				if hasExpired {
+					delete(msgHistory, msgId)
+
+					it.listFailed[queueName].Remove(eMsgId)
+				} else {
+					for e := l.Front(); e != nil; e = e.Next() {
+						rawMsg := e.Value.(*Msg)
+
+						if rawMsg.Expiredat > nowInMs {
+							continue
+						} else if rawMsg.Expiredat == 0 && rawMsg.Created > cutoff {
+							continue
+						}
+
+						l.Remove(e)
+					}
+				}
 			}
 		}
 	}
@@ -108,23 +184,25 @@ func (it *BrokerInMemory) DeleteMsg(ctx context.Context, queueName string, msgId
 	defer it.lock.Unlock()
 
 	if l, ok := it.listPending[queueName]; ok {
-		removeElementFromList(l, msgId)
+		removeStringElementFromList(l, msgId)
 	}
 
 	if l, ok := it.listProcessing[queueName]; ok {
-		removeElementFromList(l, msgId)
+		removeStringElementFromList(l, msgId)
 	}
 
 	if l, ok := it.listFailed[queueName]; ok {
-		removeElementFromList(l, msgId)
+		removeStringElementFromList(l, msgId)
 	}
 
-	delete(it.msgDetail, msgId)
+	delete(it.msgDetail[queueName], msgId)
+	delete(it.msgUniq[queueName], msgId)
+	delete(it.failedHistory[queueName], msgId)
 
 	return nil
 }
 
-func removeElementFromList(l *list.List, b string) {
+func removeStringElementFromList(l *list.List, b string) {
 	for e := l.Front(); e != nil; e = e.Next() {
 		if a, ok := e.Value.(string); ok && a == b {
 			l.Remove(e)
@@ -138,22 +216,14 @@ func (it *BrokerInMemory) DeleteQueue(ctx context.Context, queueName string) err
 	it.lock.Lock()
 	defer it.lock.Unlock()
 
-	for _, stateList := range []map[string]*list.List{
-		it.listPending,
-		it.listProcessing,
-		it.listFailed,
-	} {
-		if l, ok := stateList[queueName]; ok {
-			for e := l.Front(); e != nil; e = e.Next() {
-				msgId := e.Value.(string)
+	delete(it.failedHistory, queueName)
 
-				removeElementFromList(l, msgId)
-				delete(it.msgDetail, msgId)
+	delete(it.listPending, queueName)
+	delete(it.listProcessing, queueName)
+	delete(it.listFailed, queueName)
 
-				delete(stateList, queueName)
-			}
-		}
-	}
+	delete(it.msgDetail, queueName)
+	delete(it.msgUniq, queueName)
 
 	return nil
 }
@@ -180,14 +250,17 @@ func (it *BrokerInMemory) Dequeue(ctx context.Context, queueName string) (*Msg, 
 	msgId := e.Value.(string)
 	listPending.Remove(e)
 
-	if listProcessing, ok := it.listProcessing[queueName]; !ok {
-		return nil, ErrNoMsg
-	} else {
-		listProcessing.PushBack(msgId)
-	}
+	it.listProcessing[queueName].PushBack(msgId)
 
-	rawMsg := it.msgDetail[msgId]
+	rawMsg := it.msgDetail[queueName][msgId]
 
+	now := it.getNow()
+	rawMsg.Updated = now.UnixMilli()
+	rawMsg.State = MsgStateProcessing
+	return rawMsg, nil
+}
+
+func (it *BrokerInMemory) getNow() time.Time {
 	now := it.clock.Now()
 	if it.utc {
 		now = now.UTC()
@@ -195,10 +268,7 @@ func (it *BrokerInMemory) Dequeue(ctx context.Context, queueName string) (*Msg, 
 		now = now.Local()
 	}
 
-	nowInMs := now.UnixMilli()
-	rawMsg.Updated = nowInMs
-	rawMsg.State = MsgStateProcessing
-	return rawMsg, nil
+	return now
 }
 
 // Enqueue implements Broker
@@ -240,28 +310,29 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 
 	it.updateQueueList(ctx, queueName)
 
-	now := it.clock.Now()
-	if it.utc {
-		now = now.UTC()
-	} else {
-		now = now.Local()
-	}
-
+	now := it.getNow()
 	nowInMs := now.UnixMilli()
 
-	if msg, ok := it.msgDetail[msgId]; ok {
-		if msg.Expiredat > nowInMs {
+	if uniqExpiredAt, ok := it.msgUniq[queueName][msgId]; ok {
+		if uniqExpiredAt > 0 && uniqExpiredAt > nowInMs {
+			return nil, ErrMsgIdConflict
+		}
+	}
+
+	var expiredAt int64
+	if uniqueInMs > 0 {
+		expiredAt = now.Add(time.Millisecond * time.Duration(uniqueInMs)).UnixMilli()
+		it.msgUniq[queueName][msgId] = expiredAt
+	}
+
+	if msg, ok := it.msgDetail[queueName][msgId]; ok {
+		if msg.State == MsgStatePending || msg.State == MsgStateProcessing {
 			return nil, ErrMsgIdConflict
 		}
 	}
 
 	l := it.listPending[queueName]
 	l.PushBack(msgId)
-
-	var expiredAt int64
-	if uniqueInMs > 0 {
-		expiredAt = now.Add(time.Millisecond * time.Duration(uniqueInMs)).UnixMilli()
-	}
 
 	rawMsg := &Msg{
 		Created:   nowInMs,
@@ -272,7 +343,7 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 		State:     MsgStatePending,
 		Updated:   nowInMs,
 	}
-	it.msgDetail[msgId] = rawMsg
+	it.msgDetail[queueName][msgId] = rawMsg
 
 	return rawMsg, nil
 }
@@ -282,16 +353,14 @@ func (it *BrokerInMemory) Fail(ctx context.Context, msg IMsg, errFail error) err
 	it.lock.Lock()
 	defer it.lock.Unlock()
 
-	now := it.clock.Now()
-	if it.utc {
-		now = now.UTC()
-	} else {
-		now = now.Local()
-	}
-
 	queueName := msg.GetQueue()
 	msgId := msg.GetId()
-	rawMsg, ok := it.msgDetail[msgId]
+
+	msgs, ok := it.msgDetail[queueName]
+	if !ok {
+		return ErrNoMsg
+	}
+	rawMsg, ok := msgs[msgId]
 	if !ok {
 		return ErrNoMsg
 	}
@@ -299,50 +368,42 @@ func (it *BrokerInMemory) Fail(ctx context.Context, msg IMsg, errFail error) err
 	rawMsg.Err = errFail.Error()
 	rawMsg.State = MsgStateFailed
 
+	now := it.getNow()
 	nowInMs := now.UnixMilli()
 	rawMsg.Updated = nowInMs
 
-	if l, ok := it.listProcessing[queueName]; ok {
-		removeElementFromList(l, msgId)
+	if rawMsg.Expiredat == 0 {
+		delete(it.msgDetail[queueName], msgId)
+	} else if rawMsg.Expiredat > 0 && rawMsg.Expiredat < now.UnixMilli() {
+		delete(it.msgDetail[queueName], msgId)
 	}
 
+	if l, ok := it.listProcessing[queueName]; ok {
+		removeStringElementFromList(l, msgId)
+	}
 	it.listFailed[queueName].PushBack(msgId)
 
-	l, ok := it.listStat[queueName]
-	if !ok {
-		it.listStat[queueName] = list.New()
+	msgHistory := it.failedHistory[queueName]
+	if _, ok := msgHistory[msgId]; !ok {
+		msgHistory[msgId] = list.New()
 	}
+	msgHistory[msgId].PushBack(rawMsg)
 
+	queueStat := it.listStat[queueName]
 	todayYYYYMMDD := now.Format("2006-01-02")
-	for e := l.Back(); e != nil; e = e.Prev() {
+	for e := queueStat.Back(); e != nil; e = e.Prev() {
 		qds, ok := e.Value.(*QueueDailyStat)
 		if !ok {
 			continue
 		}
 
-		var qdsTime time.Time
-		if it.utc {
-			// time.ParseInLocation(layout string, value string, loc *time.Location)
-			qdsTime, _ = time.ParseInLocation("2006-01-02", qds.Date, time.UTC)
-		} else {
-			qdsTime, _ = time.ParseInLocation("2006-01-02", qds.Date, time.Local)
-		}
-
-		if qdsTime.Equal(now) {
+		if todayYYYYMMDD == qds.Date {
 			qds.Failed += 1
-			return nil
-		} else if now.After(qdsTime) {
-			l.PushBack(&QueueDailyStat{
-				Date:      todayYYYYMMDD,
-				Completed: 0,
-				Failed:    1,
-			})
 			return nil
 		}
 	}
 
-	// l is empty
-	l.PushBack(&QueueDailyStat{
+	queueStat.PushBack(&QueueDailyStat{
 		Date:      todayYYYYMMDD,
 		Completed: 0,
 		Failed:    1,
@@ -356,67 +417,48 @@ func (it *BrokerInMemory) Complete(ctx context.Context, msg IMsg) error {
 	it.lock.Lock()
 	defer it.lock.Unlock()
 
-	now := it.clock.Now()
-	if it.utc {
-		now = now.UTC()
-	} else {
-		now = now.Local()
-	}
-
 	queueName := msg.GetQueue()
 	msgId := msg.GetId()
-	rawMsg, ok := it.msgDetail[msgId]
+
+	msgs, ok := it.msgDetail[queueName]
 	if !ok {
 		return ErrNoMsg
 	}
+	rawMsg, ok := msgs[msgId]
+	if !ok {
+		return ErrNoMsg
+	}
+
+	now := it.getNow()
 	if rawMsg.Expiredat == 0 {
-		delete(it.msgDetail, msgId)
+		delete(it.msgDetail[queueName], msgId)
 	} else if rawMsg.Expiredat > 0 && rawMsg.Expiredat < now.UnixMilli() {
-		delete(it.msgDetail, msgId)
+		delete(it.msgDetail[queueName], msgId)
 	} else {
 		rawMsg.State = MsgStateCompleted
 		rawMsg.Updated = now.UnixMilli()
 	}
 
 	if l, ok := it.listProcessing[queueName]; ok {
-		removeElementFromList(l, msgId)
+		removeStringElementFromList(l, msgId)
 	}
 
-	l, ok := it.listStat[queueName]
-	if !ok {
-		it.listStat[queueName] = list.New()
-	}
-
+	queueStat := it.listStat[queueName]
 	todayYYYYMMDD := now.Format("2006-01-02")
-	for e := l.Back(); e != nil; e = e.Prev() {
+	for e := queueStat.Back(); e != nil; e = e.Prev() {
 		qds, ok := e.Value.(*QueueDailyStat)
 		if !ok {
 			continue
 		}
 
-		var qdsTime time.Time
-		if it.utc {
-			// time.ParseInLocation(layout string, value string, loc *time.Location)
-			qdsTime, _ = time.ParseInLocation("2006-01-02", qds.Date, time.UTC)
-		} else {
-			qdsTime, _ = time.ParseInLocation("2006-01-02", qds.Date, time.Local)
-		}
-
-		if qdsTime.Equal(now) {
-			qds.Failed += 1
-			return nil
-		} else if now.After(qdsTime) {
-			l.PushBack(&QueueDailyStat{
-				Date:      todayYYYYMMDD,
-				Completed: 1,
-				Failed:    0,
-			})
+		if todayYYYYMMDD == qds.Date {
+			qds.Completed += 1
 			return nil
 		}
 	}
 
 	// l is empty
-	l.PushBack(&QueueDailyStat{
+	queueStat.PushBack(&QueueDailyStat{
 		Date:      todayYYYYMMDD,
 		Completed: 1,
 		Failed:    0,
@@ -430,18 +472,15 @@ func (it *BrokerInMemory) GetMsg(ctx context.Context, queueName string, msgId st
 	it.lock.RLock()
 	defer it.lock.RUnlock()
 
-	if msg, ok := it.msgDetail[msgId]; !ok {
+	msgs, ok := it.msgDetail[queueName]
+	if !ok {
+		return nil, ErrNoMsg
+	}
+
+	if msg, ok := msgs[msgId]; !ok {
 		return nil, ErrNoMsg
 	} else {
-
-		now := it.clock.Now()
-		if it.utc {
-			now = now.UTC()
-		} else {
-			now = now.Local()
-		}
-
-		if msg.Expiredat > 0 && msg.Expiredat < now.UnixMilli() {
+		if msg.Expiredat > 0 && msg.Expiredat < it.getNow().UnixMilli() {
 			return nil, ErrNoMsg
 		}
 
@@ -456,15 +495,8 @@ func (it *BrokerInMemory) GetStats(ctx context.Context) ([]*QueueStat, error) {
 
 	rs := make([]*QueueStat, 0)
 
-	now := it.clock.Now()
-	if it.utc {
-		now = now.UTC()
-	} else {
-		now = now.Local()
-	}
-
 	for _, queueName := range it.listQueues() {
-		var pending, processing, completed, failed, total int64
+		var pending, processing, failed, total int64
 
 		if l, ok := it.listPending[queueName]; ok {
 			pending = int64(l.Len())
@@ -474,42 +506,18 @@ func (it *BrokerInMemory) GetStats(ctx context.Context) ([]*QueueStat, error) {
 			processing = int64(l.Len())
 		}
 
-		// if l, ok := it.listFailed[queueName]; ok {
-		// 	failed = int64(l.Len())
-		// }
-
-		if l, ok := it.listStat[queueName]; ok {
-			for e := l.Back(); e != nil; e = e.Prev() {
-				qds, ok := e.Value.(*QueueDailyStat)
-				if !ok {
-					continue
-				}
-
-				var qdsTime time.Time
-				if it.utc {
-					// time.ParseInLocation(layout string, value string, loc *time.Location)
-					qdsTime, _ = time.ParseInLocation("2006-01-02", qds.Date, time.UTC)
-				} else {
-					qdsTime, _ = time.ParseInLocation("2006-01-02", qds.Date, time.Local)
-				}
-
-				if !qdsTime.Equal(now) {
-					continue
-				}
-
-				completed += qds.Completed
-				failed += qds.Failed
-
-			}
+		if l, ok := it.listFailed[queueName]; ok {
+			failed = int64(l.Len())
 		}
 
-		total = pending + processing + completed + failed
+		total = pending + processing + failed
 
 		rs = append(rs, &QueueStat{
 			Name:       queueName,
 			Total:      total,
 			Pending:    pending,
 			Processing: processing,
+			Failed:     failed,
 		})
 	}
 	return rs, nil
@@ -529,13 +537,7 @@ func (it *BrokerInMemory) GetStatsByDate(ctx context.Context, YYYYMMDD string) (
 	it.lock.RLock()
 	defer it.lock.RUnlock()
 
-	now := it.clock.Now()
-	if it.utc {
-		now = now.UTC()
-	} else {
-		now = now.Local()
-	}
-
+	now := it.getNow()
 	todayYYYYMMDD := now.Format("2006-01-02")
 
 	rs := &QueueDailyStat{Date: todayYYYYMMDD}
@@ -664,19 +666,17 @@ func (it *BrokerInMemory) SetClock(c Clock) {
 func (it *BrokerInMemory) updateQueueList(ctx context.Context, queueName string) (err error) {
 	if _, ok := it.listPending[queueName]; !ok {
 		it.listPending[queueName] = list.New()
-	}
-
-	if _, ok := it.listProcessing[queueName]; !ok {
 		it.listProcessing[queueName] = list.New()
-	}
-
-	if _, ok := it.listFailed[queueName]; !ok {
 		it.listFailed[queueName] = list.New()
+
+		it.listStat[queueName] = list.New()
+
+		it.failedHistory[queueName] = make(MsgHistory)
+
+		it.msgDetail[queueName] = make(map[string]*Msg, 0)
+		it.msgUniq[queueName] = make(map[string]int64)
 	}
 
-	if _, ok := it.listStat[queueName]; !ok {
-		it.listStat[queueName] = list.New()
-	}
 	return nil
 }
 
@@ -684,12 +684,14 @@ func NewBrokerInMemory(opts *BrokerInMemoryOpts) (rs Broker, err error) {
 	broker := &BrokerInMemory{
 		clock:          NewWallClock(),
 		lock:           sync.RWMutex{},
+		failedHistory:  make(map[string]MsgHistory),
 		listPending:    make(map[string]*list.List),
 		listProcessing: make(map[string]*list.List),
 		listFailed:     make(map[string]*list.List),
 		listStat:       make(map[string]*list.List),
 		queuesPaused:   make(map[string]struct{}),
-		msgDetail:      make(map[string]*Msg),
+		msgDetail:      make(map[string]map[string]*Msg),
+		msgUniq:        make(map[string]map[string]int64),
 		maxBytes:       DefaultMaxBytes,
 	}
 	if opts != nil {

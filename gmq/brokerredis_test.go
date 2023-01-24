@@ -219,6 +219,11 @@ func TestBrokerRedis_Fail(t *testing.T) {
 	testBroker_Fail(t, broker)
 }
 
+func TestBrokerRedis_ListFailed(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	testBroker_ListFailed(t, broker)
+}
+
 func TestBrokerRedis_GetStats(t *testing.T) {
 	broker := getTestBrokerRedis(t)
 	testBroker_GetStats(t, broker)
@@ -227,4 +232,19 @@ func TestBrokerRedis_GetStats(t *testing.T) {
 func TestBrokerRedis_GetStatsByDate(t *testing.T) {
 	broker := getTestBrokerRedis(t)
 	testBroker_GetStatsByDate(t, broker)
+}
+
+func TestBrokerRedis_AutoDeduplicateMsgByDefault(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	testBroker_AutoDeduplicateMsgByDefault(t, broker)
+}
+
+func TestBrokerRedis_AutoDeduplicateFailedMsg(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	testBroker_AutoDeduplicateFailedMsg(t, broker)
+}
+
+func TestBrokerRedis_AutoDeduplicateCompletedMsg(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	testBroker_AutoDeduplicateCompletedMsg(t, broker)
 }

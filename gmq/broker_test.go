@@ -174,25 +174,26 @@ func testBroker_DeleteAgo(t *testing.T, broker gmq.Broker) {
 		gmq.MsgStatePending,
 		gmq.MsgStateProcessing,
 	} {
-		keys, err := broker.ListMsg(ctx, msg.Queue, state, 0, -1)
+		keys, err := broker.ListMsg(ctx, msg.Queue, state, 0, 0)
 		require.NoError(t, err)
 		require.Empty(t, keys)
 	}
-	keys, err := broker.ListMsg(ctx, msg.Queue, gmq.MsgStateFailed, 0, -1)
+	keys, err := broker.ListMsg(ctx, msg.Queue, gmq.MsgStateFailed, 0, 0)
 	require.NoError(t, err)
 	require.Equal(t, msg.Id, keys[0])
-	gotMsg, err := broker.GetMsg(ctx, msg.Queue, msg.Id)
-	require.NoError(t, err)
-	require.Equal(t, msg.Id, gotMsg.Id)
+
+	_, err = broker.GetMsg(ctx, msg.Queue, msg.Id)
+	require.ErrorIs(t, gmq.ErrNoMsg, err)
 
 	queueStats, err := broker.GetStats(ctx)
 	require.NoError(t, err)
 	require.Equal(t, len(queueStats), 1)
 	queueStat := queueStats[0]
 	require.Equal(t, msg.Queue, queueStat.Name)
-	require.Equal(t, int64(0), queueStat.Total)
+	require.Equal(t, int64(1), queueStat.Total)
 	require.Equal(t, int64(0), queueStat.Pending)
 	require.Equal(t, int64(0), queueStat.Processing)
+	require.Equal(t, int64(1), queueStat.Failed)
 
 	todayYYYYMMDD := time.Now().Format("2006-01-02")
 	queueDailyStat, err := broker.GetStatsByDate(ctx, todayYYYYMMDD)
@@ -212,7 +213,7 @@ func testBroker_DeleteAgo(t *testing.T, broker gmq.Broker) {
 		gmq.MsgStateProcessing,
 		gmq.MsgStateFailed,
 	} {
-		keys, err := broker.ListMsg(ctx, msg.Queue, state, 0, -1)
+		keys, err := broker.ListMsg(ctx, msg.Queue, state, 0, 0)
 		require.NoError(t, err)
 		require.Empty(t, keys)
 	}
@@ -228,6 +229,7 @@ func testBroker_DeleteAgo(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, int64(0), queueStat.Total)
 	require.Equal(t, int64(0), queueStat.Pending)
 	require.Equal(t, int64(0), queueStat.Processing)
+	require.Equal(t, int64(0), queueStat.Failed)
 
 	queueDailyStat, err = broker.GetStatsByDate(ctx, todayYYYYMMDD)
 	require.NoError(t, err)
@@ -261,7 +263,7 @@ func testBroker_Complete(t *testing.T, broker gmq.Broker) {
 
 	// check queue list
 	for _, state := range []string{gmq.MsgStatePending, gmq.MsgStateProcessing, gmq.MsgStateFailed} {
-		msgIds, err := broker.ListMsg(ctx, msgWant.Queue, state, 0, -1)
+		msgIds, err := broker.ListMsg(ctx, msgWant.Queue, state, 0, 0)
 		require.NoError(t, err)
 		require.Empty(t, msgIds)
 	}
@@ -277,6 +279,7 @@ func testBroker_Complete(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, int64(0), queueStat.Total)
 	require.Equal(t, int64(0), queueStat.Pending)
 	require.Equal(t, int64(0), queueStat.Processing)
+	require.Equal(t, int64(0), queueStat.Failed)
 
 	queueDailyStat, err := broker.GetStatsByDate(ctx, todayYYYYMMDD)
 	require.NoError(t, err)
@@ -303,9 +306,13 @@ func testBroker_Fail(t *testing.T, broker gmq.Broker) {
 	err = broker.Fail(ctx, msgGot, errFail)
 	require.NoError(t, err)
 
-	// auto archive fail
-	msgGotFailed, err := broker.GetMsg(ctx, msgWant.GetQueue(), msgWant.GetId())
+	_, err = broker.GetMsg(ctx, msgWant.GetQueue(), msgWant.GetId())
+	require.ErrorIs(t, gmq.ErrNoMsg, err)
+
+	// auto archive failed
+	msgs, err := broker.ListFailed(ctx, msgWant.Queue, msgWant.Id, 10, 0)
 	require.NoError(t, err)
+	msgGotFailed := msgs[0]
 	now := time.Now().Unix()
 	require.Equal(t, msgWant.GetId(), msgGotFailed.Id)
 	require.Equal(t, msgWant.GetQueue(), msgGotFailed.Queue)
@@ -321,10 +328,13 @@ func testBroker_Fail(t *testing.T, broker gmq.Broker) {
 	require.ErrorIs(t, err, gmq.ErrNoMsg)
 
 	for _, state := range []string{gmq.MsgStatePending, gmq.MsgStateProcessing} {
-		msgIds, err := broker.ListMsg(ctx, msgWant.Queue, state, 0, -1)
+		msgIds, err := broker.ListMsg(ctx, msgWant.Queue, state, 0, 0)
 		require.NoError(t, err)
 		require.Empty(t, msgIds)
 	}
+	msgIds, err := broker.ListMsg(ctx, msgWant.Queue, gmq.MsgStateFailed, 0, 0)
+	require.NoError(t, err)
+	require.Equal(t, msgWant.Id, msgIds[0])
 
 	// check stat
 	todayYYYYMMDD := time.Now().Format("2006-01-02")
@@ -334,9 +344,10 @@ func testBroker_Fail(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, len(queueStats), 1)
 	queueStat := queueStats[0]
 	require.Equal(t, msgWant.Queue, queueStat.Name)
-	require.Equal(t, int64(0), queueStat.Total)
+	require.Equal(t, int64(1), queueStat.Total)
 	require.Equal(t, int64(0), queueStat.Pending)
 	require.Equal(t, int64(0), queueStat.Processing)
+	require.Equal(t, int64(1), queueStat.Failed)
 
 	queueDailyStat, err := broker.GetStatsByDate(ctx, todayYYYYMMDD)
 	require.NoError(t, err)
@@ -344,6 +355,92 @@ func testBroker_Fail(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, int64(1), queueDailyStat.Total)
 	require.Equal(t, int64(0), queueDailyStat.Completed)
 	require.Equal(t, int64(1), queueDailyStat.Failed)
+}
+
+func testBroker_ListFailed(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
+	defer broker.Close()
+
+	ctx := context.Background()
+
+	queueFoo := grand.String(10)
+	groupBar := grand.String(10)
+
+	// mark msg1 fail twice
+	msg1 := GenerateNewMsg()
+	msg1.Queue = queueFoo
+	_, err := broker.Enqueue(ctx, msg1)
+	require.NoError(t, err)
+	_, err = broker.Dequeue(ctx, msg1.Queue)
+	require.NoError(t, err)
+	msg1Err := fmt.Errorf("error %s, queueName=%s msgId=%s", grand.String(5), msg1.Queue, msg1.Id)
+	err = broker.Fail(ctx, msg1, msg1Err)
+	require.NoError(t, err)
+
+	_, err = broker.Enqueue(ctx, msg1)
+	require.NoError(t, err)
+	_, err = broker.Dequeue(ctx, msg1.Queue)
+	require.NoError(t, err)
+	msg2Err := fmt.Errorf("error %s, queueName=%s msgId=%s", grand.String(5), msg1.Queue, msg1.Id)
+	err = broker.Fail(ctx, msg1, msg2Err)
+	require.NoError(t, err)
+
+	// mark msg3 fail once
+	msg3 := GenerateNewMsg()
+	msg3.Queue = groupBar
+	_, err = broker.Enqueue(ctx, msg3)
+	require.NoError(t, err)
+	_, err = broker.Dequeue(ctx, msg3.Queue)
+	require.NoError(t, err)
+	msg3Err := fmt.Errorf("error %s, queueName=%s msgId=%s", grand.String(5), msg3.Queue, msg3.Id)
+	err = broker.Fail(ctx, msg3, msg3Err)
+	require.NoError(t, err)
+
+	msgs, err := broker.ListFailed(ctx, msg1.Queue, msg1.Id, 10, 0)
+	require.NoError(t, err)
+	require.Equal(t, 2, len(msgs))
+	// NOTICE it is order in fresh to old
+	msg1Got := msgs[0]
+	msg2Got := msgs[1]
+	require.Equal(t, msg1.Id, msg1Got.Id)
+	require.Equal(t, msg2Err.Error(), msg1Got.Err)
+	require.Equal(t, msg1.Id, msg2Got.Id)
+	require.Equal(t, msg1Err.Error(), msg2Got.Err)
+
+	msgs, err = broker.ListFailed(ctx, msg3.Queue, msg3.Id, 10, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(msgs))
+	msg3Got := msgs[0]
+	require.Equal(t, msg3.Id, msg3Got.Id)
+	require.Equal(t, msg3Err.Error(), msg3Got.Err)
+}
+
+func testBroker_ListQueue(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
+	defer broker.Close()
+
+	ctx := context.Background()
+	msg1 := GenerateNewMsg()
+	broker.Enqueue(ctx, msg1)
+	msg2 := GenerateNewMsg()
+	broker.Enqueue(ctx, msg2)
+	msg3 := GenerateNewMsg()
+	broker.Enqueue(ctx, msg3)
+
+	m := map[string]struct{}{}
+	queues, err := broker.ListQueue(context.Background())
+	require.NoError(t, err)
+	for _, item := range queues {
+		m[item] = struct{}{}
+	}
+	for _, name := range []string{
+		msg1.Queue,
+		msg2.Queue,
+		msg3.Queue,
+	} {
+		_, ok := m[name]
+		require.True(t, ok)
+	}
 }
 
 func testBroker_GetStats(t *testing.T, broker gmq.Broker) {
@@ -396,9 +493,10 @@ func testBroker_GetStats(t *testing.T, broker gmq.Broker) {
 	queueStats, err := broker.GetStats(ctx)
 	require.NoError(t, err)
 	qs := queueStats[0]
-	require.Equal(t, int64(0), qs.Total)
+	require.Equal(t, int64(1), qs.Total)
 	require.Equal(t, int64(0), qs.Pending)
 	require.Equal(t, int64(0), qs.Processing)
+	require.Equal(t, int64(1), qs.Failed)
 
 	_, err = broker.Enqueue(ctx, msgSucc)
 	require.NoError(t, err)
@@ -409,9 +507,10 @@ func testBroker_GetStats(t *testing.T, broker gmq.Broker) {
 	queueStats, err = broker.GetStats(ctx)
 	require.NoError(t, err)
 	qs = queueStats[0]
-	require.Equal(t, int64(0), qs.Total)
+	require.Equal(t, int64(1), qs.Total)
 	require.Equal(t, int64(0), qs.Pending)
 	require.Equal(t, int64(0), qs.Processing)
+	require.Equal(t, int64(1), qs.Failed)
 
 	_, err = broker.Enqueue(ctx, msgProcessing)
 	require.NoError(t, err)
@@ -422,9 +521,10 @@ func testBroker_GetStats(t *testing.T, broker gmq.Broker) {
 	queueStats, err = broker.GetStats(ctx)
 	require.NoError(t, err)
 	qs = queueStats[0]
-	require.Equal(t, int64(1), qs.Total)
+	require.Equal(t, int64(2), qs.Total)
 	require.Equal(t, int64(0), qs.Pending)
 	require.Equal(t, int64(1), qs.Processing)
+	require.Equal(t, int64(1), qs.Failed)
 }
 
 func testBroker_GetStatsByDate(t *testing.T, broker gmq.Broker) {
@@ -488,4 +588,75 @@ func testBroker_GetStatsByDate(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, int64(2), rs.Total)
 	require.Equal(t, int64(1), rs.Completed)
 	require.Equal(t, int64(1), rs.Failed)
+}
+
+func testBroker_AutoDeduplicateMsgByDefault(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
+	defer broker.Close()
+
+	msgWant := GenerateNewMsg()
+	ctx := context.Background()
+
+	_, err := broker.Enqueue(ctx, msgWant)
+	require.NoError(t, err)
+	_, err = broker.Enqueue(ctx, msgWant)
+	require.ErrorIs(t, gmq.ErrMsgIdConflict, err)
+
+	_, err = broker.Dequeue(ctx, msgWant.Queue)
+	require.NoError(t, err)
+
+	// the message Auto Deduplicate if its state is processing
+	_, err = broker.Enqueue(ctx, msgWant)
+	require.ErrorIs(t, gmq.ErrMsgIdConflict, err)
+}
+
+func testBroker_AutoDeduplicateFailedMsg(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
+	defer broker.Close()
+
+	msgWant := GenerateNewMsg()
+	ctx := context.Background()
+
+	_, err := broker.Enqueue(ctx, msgWant)
+	require.NoError(t, err)
+	err = broker.Fail(ctx, msgWant, errors.New("something wrong"))
+	require.NoError(t, err)
+
+	// it does not Auto Deduplicate if the message state is not in {pending,processing}
+	_, err = broker.Enqueue(ctx, msgWant)
+	require.NoError(t, err)
+
+	_, err = broker.Dequeue(ctx, msgWant.Queue)
+	require.NoError(t, err)
+
+	_, err = broker.Enqueue(ctx, msgWant)
+	require.ErrorIs(t, gmq.ErrMsgIdConflict, err)
+
+	err = broker.DeleteMsg(ctx, msgWant.Queue, msgWant.Id)
+	require.NoError(t, err)
+
+	_, err = broker.Enqueue(ctx, msgWant)
+	require.NoError(t, err)
+	_, err = broker.Enqueue(ctx, msgWant)
+	require.ErrorIs(t, gmq.ErrMsgIdConflict, err)
+}
+
+func testBroker_AutoDeduplicateCompletedMsg(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
+	defer broker.Close()
+
+	msgWant := GenerateNewMsg()
+	ctx := context.Background()
+
+	_, err := broker.Enqueue(ctx, msgWant)
+	require.NoError(t, err)
+	_, err = broker.Dequeue(ctx, msgWant.Queue)
+	require.NoError(t, err)
+	err = broker.Complete(ctx, msgWant)
+	require.NoError(t, err)
+	_, err = broker.Enqueue(ctx, msgWant)
+	require.NoError(t, err)
+
+	_, err = broker.Enqueue(ctx, msgWant)
+	require.ErrorIs(t, gmq.ErrMsgIdConflict, err)
 }
