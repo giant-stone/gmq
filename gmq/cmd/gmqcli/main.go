@@ -156,7 +156,7 @@ func listFailed(ctx context.Context, broker gmq.Broker, queueName, msgId string,
 	gutil.ExitOnErr(err)
 
 	if len(msgs) == 0 {
-		fmt.Printf("history of failed message matched queue=%s id=%s not found", queueName, msgId)
+		fmt.Printf("history of failed message matched queue=%s id=%s not found \n", queueName, msgId)
 		os.Exit(0)
 	}
 	for _, msg := range msgs {
