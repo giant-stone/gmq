@@ -3,6 +3,7 @@ package gmq
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/giant-stone/go/glogging"
 )
@@ -21,6 +22,13 @@ type Server struct {
 func NewServer(ctx context.Context, b Broker, cfg *Config) *Server {
 	if cfg == nil {
 		cfg = &Config{}
+	}
+
+	if cfg.MsgMaxTTL == 0 {
+		cfg.MsgMaxTTL = time.Second * time.Duration(TTLMsg)
+	}
+	if cfg.RestIfNoMsg == 0 {
+		cfg.RestIfNoMsg = DefaultDurationRestIfNoMsg
 	}
 
 	var logger Logger
@@ -87,10 +95,6 @@ func (it *Server) Run(mux *Mux) (err error) {
 		p.start()
 	}
 
-	if it.cfg.MsgMaxTTL == 0 {
-		it.cfg.MsgMaxTTL = TTLMsg
-	}
-
 	// auto-delete dead messages
 	it.cleaner = NewCleaner(CleanerParams{
 		Broker:     it.broker,
@@ -124,4 +128,8 @@ func (it *Server) Resume(qname string) error {
 		return nil
 	}
 	return it.broker.Resume(it.ctx, qname)
+}
+
+func (it *Server) Cfg() *Config {
+	return it.cfg
 }
