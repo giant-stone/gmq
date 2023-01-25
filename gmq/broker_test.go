@@ -415,6 +415,34 @@ func testBroker_ListFailed(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, msg3Err.Error(), msg3Got.Err)
 }
 
+func testBroker_ListFailedMaxItems(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
+	defer broker.Close()
+
+	ctx := context.Background()
+
+	msg := GenerateNewMsg()
+	failErrs := []string{}
+	for i := 0; i < gmq.DefaultMaxItemsLimit*2; i += 1 {
+		_, err := broker.Enqueue(ctx, msg)
+		require.NoError(t, err)
+		_, err = broker.Dequeue(ctx, msg.Queue)
+		require.NoError(t, err)
+		failErr := fmt.Errorf("error %s, queueName=%s msgId=%s", grand.String(5), msg.Queue, msg.Id)
+		failErrs = append(failErrs, failErr.Error())
+		err = broker.Fail(ctx, msg, failErr)
+		require.NoError(t, err)
+	}
+
+	msgs, err := broker.ListFailed(ctx, msg.Queue, msg.Id, int64(gmq.DefaultMaxItemsLimit*2), 0)
+	require.NoError(t, err)
+	require.Equal(t, gmq.DefaultMaxItemsLimit, len(msgs))
+
+	for i := len(msgs); i > 0; i -= 1 {
+		require.Equal(t, failErrs[gmq.DefaultMaxItemsLimit+i-1], msgs[gmq.DefaultMaxItemsLimit-i].Err)
+	}
+}
+
 func testBroker_ListQueue(t *testing.T, broker gmq.Broker) {
 	require.NotNil(t, broker)
 	defer broker.Close()

@@ -82,6 +82,11 @@ func TestBrokerInMemory_ListFailed(t *testing.T) {
 	testBroker_ListFailed(t, broker)
 }
 
+func TestBrokerInMemory_ListFailedMaxItems(t *testing.T) {
+	broker := getTestBrokerInMemory(t)
+	testBroker_ListFailedMaxItems(t, broker)
+}
+
 func TestBrokerInMemory_GetStats(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	testBroker_GetStats(t, broker)

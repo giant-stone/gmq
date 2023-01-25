@@ -389,6 +389,10 @@ func (it *BrokerInMemory) Fail(ctx context.Context, msg IMsg, errFail error) err
 	}
 	msgHistory[msgId].PushBack(rawMsg)
 
+	if msgHistory[msgId].Len() > DefaultMaxItemsLimit {
+		msgHistory[msgId].Remove(msgHistory[msgId].Front())
+	}
+
 	queueStat := it.listStat[queueName]
 	todayYYYYMMDD := now.Format("2006-01-02")
 	for e := queueStat.Back(); e != nil; e = e.Prev() {

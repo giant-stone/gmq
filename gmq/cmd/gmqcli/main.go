@@ -77,7 +77,7 @@ func main() {
 	stateList := strings.Join(msgStatList, ",")
 	flag.StringVar(&state, "s", "failed", fmt.Sprintf("must be one of %s, required for -list, queue state to search", stateList))
 
-	flag.Int64Var(&optLimit, "n", gmq.DefaultLimit, fmt.Sprintf("use with -list, maximum number of messages to display, default is %d", gmq.DefaultLimit))
+	flag.Int64Var(&optLimit, "n", gmq.DefaultMaxItemsLimit, fmt.Sprintf("use with -list, maximum number of messages to display, default is %d", gmq.DefaultMaxItemsLimit))
 	flag.Int64Var(&optOffset, "o", 0, "use with -list, first messages offset to display, start with 0")
 
 	flag.BoolVar(&useUTC, "u", false, "process time in UTC instead of local")

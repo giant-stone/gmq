@@ -224,6 +224,11 @@ func TestBrokerRedis_ListFailed(t *testing.T) {
 	testBroker_ListFailed(t, broker)
 }
 
+func TestBrokerRedis_ListFailedMaxItems(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	testBroker_ListFailedMaxItems(t, broker)
+}
+
 func TestBrokerRedis_GetStats(t *testing.T) {
 	broker := getTestBrokerRedis(t)
 	testBroker_GetStats(t, broker)

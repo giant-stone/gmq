@@ -14,7 +14,7 @@ const (
 )
 
 const (
-	DefaultLimit = 20
+	DefaultMaxItemsLimit = 10
 )
 
 type Broker interface {

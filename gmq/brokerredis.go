@@ -117,7 +117,7 @@ func (it *BrokerRedis) ListQueue(ctx context.Context) (rs []string, err error) {
 
 func (it *BrokerRedis) ListFailed(ctx context.Context, queueName string, msgId string, limit int64, offset int64) (rs []*Msg, err error) {
 	if limit <= 0 {
-		limit = DefaultLimit - 1
+		limit = DefaultMaxItemsLimit - 1
 	}
 	if offset <= 0 {
 		offset = 0
@@ -126,7 +126,7 @@ func (it *BrokerRedis) ListFailed(ctx context.Context, queueName string, msgId s
 	key := NewKeyQueueFailedHistory(it.namespace, queueName, msgId)
 	rs = make([]*Msg, 0)
 
-	items, err := it.cli.LRange(ctx, key, offset, limit).Result()
+	items, err := it.cli.LRange(ctx, key, offset, limit-1).Result()
 	if err != nil {
 		if err == redis.ErrClosed {
 			return nil, nil
@@ -448,6 +448,7 @@ func (it *BrokerRedis) DeleteQueue(ctx context.Context, queueName string) (err e
 // KEYS[3] -> <namespace>:<queueName>:failed
 // KEYS[4] -> <namespace>:<queueName>:msg:<msgId>
 // KEYS[5] -> <namespace>:<queueName>:uniq:<msgId>
+// KEYS[6] -> <namespace>:<queueName>:his:<msgId>
 //
 // ARGV[1] -> <msgId>
 var scriptDeleteMsg = redis.NewScript(`
@@ -456,6 +457,7 @@ redis.call("LREM", KEYS[2], 0, ARGV[1])
 redis.call("LREM", KEYS[3], 0, ARGV[1])
 redis.call("DEL", KEYS[4])
 redis.call("DEL", KEYS[5])
+redis.call("DEL", KEYS[6])
 return 0
 `)
 
@@ -466,6 +468,7 @@ func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (
 		NewKeyQueueFailed(it.namespace, queueName),
 		NewKeyMsgDetail(it.namespace, queueName, msgId),
 		NewKeyMsgUnique(it.namespace, queueName, msgId),
+		NewKeyQueueFailedHistory(it.namespace, queueName, msgId),
 	}
 
 	argv := []interface{}{
@@ -759,13 +762,13 @@ func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg
 
 func (it *BrokerRedis) ListMsg(ctx context.Context, queueName, state string, offset, limit int64) (values []string, err error) {
 	if limit <= 0 {
-		limit = DefaultLimit - 1
+		limit = DefaultMaxItemsLimit - 1
 	}
 	if offset <= 0 {
 		offset = 0
 	}
 
-	values, err = it.cli.LRange(ctx, NewKeyQueueState(it.namespace, queueName, state), offset, limit).Result()
+	values, err = it.cli.LRange(ctx, NewKeyQueueState(it.namespace, queueName, state), offset, limit-1).Result()
 	if err != nil {
 		if err != redis.Nil {
 			return nil, err
@@ -888,16 +891,12 @@ func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *Que
 // KEYS[2] -> <namespace>:<queueName>:processing
 // KEYS[3] -> <namespace>:<queueName>:failed
 // KEYS[4] -> <namespace>:<queueName>:failed:<YYYY-MM-DD>
-// KEYS[5] -> <namespace>:<queueName>:failed:<msgId>
 // --
 // ARGV[1] -> <msgId>
-// ARGV[2] -> state "failed"
-// ARGV[3] -> die at <current unix time in milliseconds>
-// ARGV[4] -> Info for failure
-
+//
 // Output:
-// Returns 0 if successfully enqueued
-// Returns 1 if task ID did not exists
+// Returns message detail if successfully
+// Returns nil if message matched msgId not found
 var scriptFail = redis.NewScript(`
 if redis.call("EXISTS", KEYS[1]) == 1 then
 	redis.call("LREM", KEYS[2], 0, ARGV[1])
@@ -948,8 +947,14 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 	rawMsg.Updated = now.UnixMilli()
 	rawMsg.Err = errFail.Error()
 
+	keyFailedHis := NewKeyQueueFailedHistory(it.namespace, queueName, msgId)
 	dat, _ := json.Marshal(rawMsg)
-	_, err = it.cli.LPush(ctx, NewKeyQueueFailedHistory(it.namespace, queueName, msgId), dat).Result()
+	_, err = it.cli.LPush(ctx, keyFailedHis, dat).Result()
+	if err != nil {
+		return err
+	}
+
+	_, err = it.cli.LTrim(ctx, keyFailedHis, 0, DefaultMaxItemsLimit-1).Result()
 	if err != nil {
 		return err
 	}
