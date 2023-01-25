@@ -505,7 +505,7 @@ func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (
 // ARGV[4] -> "expireat"
 var scriptDeleteAgo = redis.NewScript(`
 local totalKeys = tonumber(ARGV[2])
-for i=6, totalKeys, 2 do
+for i=3, totalKeys, 2 do
 	local keyMsgDetail = KEYS[i+1]
 	local created = redis.call("HGET", keyMsgDetail, ARGV[3])
 	local expireat = redis.call("HGET", keyMsgDetail, ARGV[4])
@@ -760,9 +760,9 @@ func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg
 	}, nil
 }
 
-func (it *BrokerRedis) ListMsg(ctx context.Context, queueName, state string, offset, limit int64) (values []string, err error) {
+func (it *BrokerRedis) ListMsg(ctx context.Context, queueName, state string, limit, offset int64) (values []string, err error) {
 	if limit <= 0 {
-		limit = DefaultMaxItemsLimit - 1
+		limit = DefaultMaxItemsLimit
 	}
 	if offset <= 0 {
 		offset = 0

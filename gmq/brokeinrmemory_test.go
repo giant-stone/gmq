@@ -77,6 +77,11 @@ func TestBrokerInMemory_ListQueue(t *testing.T) {
 	testBroker_ListQueue(t, broker)
 }
 
+func TestBrokerInMemory_ListMsg(t *testing.T) {
+	broker := getTestBrokerInMemory(t)
+	testBroker_ListMsg(t, broker)
+}
+
 func TestBrokerInMemory_ListFailed(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	testBroker_ListFailed(t, broker)

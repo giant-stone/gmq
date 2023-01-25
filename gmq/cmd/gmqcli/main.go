@@ -160,7 +160,7 @@ func listFailed(ctx context.Context, broker gmq.Broker, queueName, msgId string,
 		os.Exit(0)
 	}
 	for _, msg := range msgs {
-		fmt.Println(msg)
+		printMsg(msg)
 	}
 }
 
@@ -250,7 +250,11 @@ func getMsg(ctx context.Context, broker gmq.Broker, queueName, msgId string) {
 		gutil.ExitOnErr(err)
 	}
 
-	fmt.Println("RAW\n", msg)
+	printMsg(msg)
+}
+
+func printMsg(msg *gmq.Msg) {
+	fmt.Println("\nRAW\n", msg)
 
 	dat, err := json.MarshalIndent(msg, "", "  ")
 	gutil.ExitOnErr(err)

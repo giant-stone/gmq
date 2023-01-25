@@ -219,6 +219,11 @@ func TestBrokerRedis_Fail(t *testing.T) {
 	testBroker_Fail(t, broker)
 }
 
+func TestBrokerRedis_ListMsg(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	testBroker_ListMsg(t, broker)
+}
+
 func TestBrokerRedis_ListFailed(t *testing.T) {
 	broker := getTestBrokerRedis(t)
 	testBroker_ListFailed(t, broker)

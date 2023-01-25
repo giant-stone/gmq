@@ -357,6 +357,93 @@ func testBroker_Fail(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, int64(1), queueDailyStat.Failed)
 }
 
+func testBroker_ListMsg(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
+	defer broker.Close()
+
+	queueName := grand.String(10)
+	msgFail := GenerateNewMsg()
+	msgFail.Queue = queueName
+	msgFail.Payload = []byte(`fail`)
+
+	msgSucc := GenerateNewMsg()
+	msgSucc.Queue = queueName
+	msgSucc.Payload = []byte(`succ`)
+
+	msgProcessing := GenerateNewMsg()
+	msgProcessing.Queue = queueName
+	msgProcessing.Payload = []byte(`processing`)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	now := time.Now()
+	clock := gmq.NewSimulatedClock(now)
+	broker.SetClock(clock)
+
+	restIfNoMsg := time.Duration(10) * time.Millisecond
+	glogging.Init([]string{"stderr"}, "warn")
+	srv := gmq.NewServer(ctx, broker, &gmq.Config{RestIfNoMsg: restIfNoMsg, MsgMaxTTL: time.Minute, Logger: glogging.Sugared})
+	mux := gmq.NewMux()
+	mux.Handle(queueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
+		p := string(msg.GetPayload())
+		if p == "fail" {
+			return errors.New("fail")
+		} else if p == "succ" {
+			return nil
+		} else if p == "processing" {
+			time.Sleep(time.Minute)
+		}
+		return nil
+	}))
+
+	err := srv.Run(mux)
+	require.NoError(t, err)
+
+	_, err = broker.Enqueue(ctx, msgFail)
+	require.NoError(t, err)
+	// wait consumer done
+	clock.AdvanceTime(restIfNoMsg * 2)
+	time.Sleep(restIfNoMsg * 2)
+
+	msgIds, _ := broker.ListMsg(ctx, queueName, gmq.MsgStateFailed, gmq.DefaultMaxItemsLimit, 0)
+	require.Equal(t, 1, len(msgIds))
+	require.Equal(t, msgFail.Id, msgIds[0])
+	msgIds, _ = broker.ListMsg(ctx, queueName, gmq.MsgStatePending, gmq.DefaultMaxItemsLimit, 0)
+	require.Equal(t, 0, len(msgIds))
+	msgIds, _ = broker.ListMsg(ctx, queueName, gmq.MsgStateProcessing, gmq.DefaultMaxItemsLimit, 0)
+	require.Equal(t, 0, len(msgIds))
+
+	_, err = broker.Enqueue(ctx, msgSucc)
+	require.NoError(t, err)
+	// wait consumer done
+	clock.AdvanceTime(restIfNoMsg * 2)
+	time.Sleep(restIfNoMsg * 2)
+
+	msgIds, _ = broker.ListMsg(ctx, queueName, gmq.MsgStateFailed, gmq.DefaultMaxItemsLimit, 0)
+	require.Equal(t, 1, len(msgIds))
+	require.Equal(t, msgFail.Id, msgIds[0])
+	msgIds, _ = broker.ListMsg(ctx, queueName, gmq.MsgStatePending, gmq.DefaultMaxItemsLimit, 0)
+	require.Equal(t, 0, len(msgIds))
+	msgIds, _ = broker.ListMsg(ctx, queueName, gmq.MsgStateProcessing, gmq.DefaultMaxItemsLimit, 0)
+	require.Equal(t, 0, len(msgIds))
+
+	_, err = broker.Enqueue(ctx, msgProcessing)
+	require.NoError(t, err)
+	// wait consumer done
+	clock.AdvanceTime(restIfNoMsg * 2)
+	time.Sleep(restIfNoMsg * 2)
+
+	msgIds, _ = broker.ListMsg(ctx, queueName, gmq.MsgStateFailed, gmq.DefaultMaxItemsLimit, 0)
+	require.Equal(t, 1, len(msgIds))
+	require.Equal(t, msgFail.Id, msgIds[0])
+	msgIds, _ = broker.ListMsg(ctx, queueName, gmq.MsgStatePending, gmq.DefaultMaxItemsLimit, 0)
+	require.Equal(t, 0, len(msgIds))
+	msgIds, _ = broker.ListMsg(ctx, queueName, gmq.MsgStateProcessing, gmq.DefaultMaxItemsLimit, 0)
+	require.Equal(t, 1, len(msgIds))
+	require.Equal(t, msgProcessing.Id, msgIds[0])
+}
+
 func testBroker_ListFailed(t *testing.T, broker gmq.Broker) {
 	require.NotNil(t, broker)
 	defer broker.Close()
