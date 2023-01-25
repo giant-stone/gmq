@@ -106,3 +106,28 @@ func TestBrokerInMemory_AutoDeduplicateCompletedMsg(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	testBroker_AutoDeduplicateCompletedMsg(t, broker)
 }
+
+func TestBrokerInMemory_ClientEnqueue(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	testClient_Enqueue(t, broker)
+}
+
+func TestBrokerInMemory_ClientDequeue(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	testClient_Dequeue(t, broker)
+}
+
+func TestBrokerInMemory_ClientEnqueueOptQueueName(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	testClient_EnqueueOptQueueName(t, broker)
+}
+
+func TestBrokerInMemory_ClientEnqueueDuplicatedMsg(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	testClient_EnqueueDuplicatedMsg(t, broker)
+}
+
+func TestBrokerInMemory_ClientEnqueueOptUniqueIn(t *testing.T) {
+	broker := getTestBrokerRedis(t)
+	testClient_EnqueueOptUniqueIn(t, broker)
+}
