@@ -117,7 +117,7 @@ func (it *BrokerRedis) ListQueue(ctx context.Context) (rs []string, err error) {
 
 func (it *BrokerRedis) ListFailed(ctx context.Context, queueName string, msgId string, limit int64, offset int64) (rs []*Msg, err error) {
 	if limit <= 0 {
-		limit = DefaultMaxItemsLimit - 1
+		limit = DefaultMaxItemsLimit
 	}
 	if offset <= 0 {
 		offset = 0
@@ -520,27 +520,26 @@ return 0
 `)
 
 // delete messages old than <nowUnixTimestamp - duration>
-func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, duration time.Duration) error {
+func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, duration time.Duration) (err error) {
 	now := it.getNow()
 	cutoff := now.Add(-duration).UnixMilli()
 
-	states := []string{
+	keys := []string{
 		NewKeyQueuePending(it.namespace, queueName),
 		NewKeyQueueProcessing(it.namespace, queueName),
 	}
 
 	limit := int64(1000)
 
-	for _, state := range states {
+	for _, keyQueue := range keys {
+		offset := int64(0)
 		for {
-			keys := []string{
-				states[0],
-				states[1],
-				"created",
-				"expireat",
+			scriptKeys := []string{
+				keys[0],
+				keys[1],
 			}
 
-			msgIds, err := it.cli.LRange(ctx, state, 0, limit).Result()
+			msgIds, err := it.cli.LRange(ctx, keyQueue, offset, offset+limit-1).Result()
 			if err != nil {
 				if err == redis.ErrClosed {
 					return nil
@@ -548,91 +547,122 @@ func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, duration
 				return err
 			}
 
-			if len(msgIds) == 0 {
-				break
-			}
-
 			for i := range msgIds {
 				msgId := msgIds[i]
-				keys = append(keys, msgId, NewKeyMsgDetail(it.namespace, queueName, msgId))
+				scriptKeys = append(scriptKeys, msgId, NewKeyMsgDetail(it.namespace, queueName, msgId))
 			}
 
-			if len(keys) == 4 {
+			if len(scriptKeys) == 2 {
 				break
 			}
 
 			args := []interface{}{
 				cutoff,
-				len(keys),
+				len(scriptKeys),
+				"created",
+				"expireat",
 			}
 
-			_, err = scriptDeleteAgo.Run(ctx, it.cli, keys, args).Result()
+			_, err = scriptDeleteAgo.Run(ctx, it.cli, scriptKeys, args).Result()
 			if err != nil {
 				return err
 			}
+
+			if len(msgIds) < int(limit) {
+				break
+			}
+
+			offset += limit
 		}
 	}
 
+	err = it.deleteAgoFailedMsgId(ctx, queueName, cutoff)
+	if err != nil {
+		if err == redis.ErrClosed {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (it *BrokerRedis) deleteAgoFailedMsgId(ctx context.Context, queueName string, cutoff int64) (err error) {
+	limit := int64(1000)
+	offset := int64(0)
+
 	keyFailed := NewKeyQueueFailed(it.namespace, queueName)
 	for {
-		msgIds, err := it.cli.LRange(ctx, keyFailed, 0, limit).Result()
+		msgIds, err := it.cli.LRange(ctx, keyFailed, offset, offset+limit-1).Result()
 		if err != nil {
 			return err
 		}
 
-		if len(msgIds) == 0 {
-			break
-		}
-
 		for _, msgId := range msgIds {
-			keyFailedHis := NewKeyQueueFailedHistory(it.namespace, queueName, msgId)
-
-			items, err := it.cli.LRange(ctx, keyFailedHis, 0, limit).Result()
-			if err != nil {
-				if err == redis.ErrClosed {
-					return nil
-				}
-				return err
-			}
-			if len(items) == 0 {
-				break
-			}
-
-			rawMsg := &Msg{}
-			err = json.Unmarshal([]byte(items[0]), rawMsg)
+			delkeyFailedHis, err := it.deleteAgoFailedHistoryItem(ctx, queueName, msgId, cutoff)
 			if err != nil {
 				return err
 			}
 
-			// delete this mesasge all history
-			if (rawMsg.Created > 0 && rawMsg.Created < cutoff) || (rawMsg.Expiredat > 0 && rawMsg.Expiredat <= cutoff) {
-				_, err := it.cli.Del(ctx, keyFailedHis).Result()
+			if delkeyFailedHis {
+				keyFailedHis := NewKeyQueueFailedHistory(it.namespace, queueName, msgId)
+
+				_, err = it.cli.Del(ctx, keyFailedHis).Result()
 				if err != nil {
 					return err
 				}
+
 				_, err = it.cli.LRem(ctx, keyFailed, 0, msgId).Result()
 				if err != nil {
 					return err
 				}
-				continue
 			}
+		}
 
-			// delete this mesasge expired history records
-			for _, item := range items {
-				msg := &Msg{}
-				err = json.Unmarshal([]byte(item), msg)
-				if err != nil {
-					return err
+		if len(msgIds) < int(limit) {
+			break
+		}
+
+		offset += limit
+	}
+
+	return nil
+}
+
+func (it *BrokerRedis) deleteAgoFailedHistoryItem(ctx context.Context, queueName, msgId string, cutoff int64) (delkeyFailedHis bool, err error) {
+	keyFailedHis := NewKeyQueueFailedHistory(it.namespace, queueName, msgId)
+	items, err := it.cli.LRange(ctx, keyFailedHis, 0, DefaultMaxItemsLimit-1).Result()
+	if err != nil {
+		return false, err
+	}
+
+	if len(items) == 0 {
+		return true, nil
+	}
+
+	// delete this mesasge expired history item(s)
+	for idx, item := range items {
+		rawMsg := &Msg{}
+		err = json.Unmarshal([]byte(item), rawMsg)
+		if err != nil {
+			// delete unexpected structure item
+			_, err = it.cli.LRem(ctx, keyFailedHis, 0, item).Result()
+			if err != nil {
+				return false, err
+			}
+		} else {
+			if rawMsg.Created == 0 || (rawMsg.Created > 0 && rawMsg.Created < cutoff) || (rawMsg.Expiredat > 0 && rawMsg.Expiredat <= cutoff) {
+				if idx == 0 {
+					return true, nil
 				}
 
-				if (rawMsg.Created > 0 && rawMsg.Created < cutoff) || (rawMsg.Expiredat > 0 && rawMsg.Expiredat <= cutoff) {
-					it.cli.LRem(ctx, keyFailedHis, 0, item)
+				_, err = it.cli.LRem(ctx, keyFailedHis, 0, item).Result()
+				if err != nil {
+					return false, err
 				}
 			}
 		}
 	}
-
-	return nil
+	return false, nil
 }
 
 func (it *BrokerRedis) Pause(ctx context.Context, qname string) error {
@@ -768,7 +798,7 @@ func (it *BrokerRedis) ListMsg(ctx context.Context, queueName, state string, lim
 		offset = 0
 	}
 
-	values, err = it.cli.LRange(ctx, NewKeyQueueState(it.namespace, queueName, state), offset, limit-1).Result()
+	values, err = it.cli.LRange(ctx, NewKeyQueueState(it.namespace, queueName, state), offset, offset+limit-1).Result()
 	if err != nil {
 		if err != redis.Nil {
 			return nil, err
