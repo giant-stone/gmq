@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -22,13 +23,15 @@ var (
 	cmdListFailed bool
 	cmdDelMsg     bool
 
-	cmdDelQueue  bool
-	cmdListQueue bool
-	cmdPauseq    string
-	cmdResumeq   string
+	cmdDelQueue   bool
+	cmdListQueue  bool
+	cmdCleanQueue bool
+	cmdPauseq     string
+	cmdResumeq    string
 
 	cmdPrintStats bool
 
+	ago      int64
 	dsnRedis string
 
 	msgId      string
@@ -52,6 +55,10 @@ var (
 	}
 )
 
+var buildts = ""
+var builddsn = ""
+var cmdShowVer bool
+
 func main() {
 	flag.StringVar(&loglevel, "l", "debug", "loglevel debug,info,warn,error")
 	flag.StringVar(&dsnRedis, "d", "redis://127.0.0.1:6379/0", "redis DSN")
@@ -67,6 +74,7 @@ func main() {
 
 	flag.BoolVar(&cmdListQueue, "listqueue", false, "list all queue names")
 	flag.BoolVar(&cmdDelQueue, "delqueue", false, "delete a message from queue")
+	flag.BoolVar(&cmdCleanQueue, "cleanqueue", false, "delete expired message(s) from queue")
 	flag.StringVar(&cmdPauseq, "pause", "", "queuename to pause")
 	flag.StringVar(&cmdResumeq, "resume", "", "queuename to resume")
 
@@ -77,22 +85,37 @@ func main() {
 	stateList := strings.Join(msgStatList, ",")
 	flag.StringVar(&state, "s", "failed", fmt.Sprintf("must be one of %s, required for -list, queue state to search", stateList))
 
+	flag.Int64Var(&ago, "ago", gmq.TTLMsg, "delete expired message(s) how long ago, in seconds")
+
 	flag.Int64Var(&optLimit, "n", gmq.DefaultMaxItemsLimit, fmt.Sprintf("use with -list, maximum number of messages to display, default is %d", gmq.DefaultMaxItemsLimit))
 	flag.Int64Var(&optOffset, "o", 0, "use with -list, first messages offset to display, start with 0")
 
 	flag.BoolVar(&useUTC, "u", false, "process time in UTC instead of local")
 
+	flag.BoolVar(&cmdShowVer, "v", false, "show build timestamp")
+
 	flag.Parse()
 	flag.Usage = mdbcliUsage
 
 	glogging.Init([]string{"stdout"}, glogging.Loglevel(loglevel))
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	if !cmdPrintStats &&
 		!cmdAddMsg && !cmdGetMsg && !cmdListMsg && !cmdListFailed && !cmdDelMsg &&
-		!cmdDelQueue && !cmdListQueue &&
-		cmdPauseq != "" && cmdResumeq != "" {
+		!cmdDelQueue && !cmdListQueue && !cmdCleanQueue &&
+		cmdPauseq != "" && cmdResumeq != "" &&
+		!cmdShowVer {
 		flag.Usage()
 		os.Exit(1)
+	}
+
+	if cmdShowVer {
+		fmt.Println("built at ", buildts)
+		os.Exit(0)
+	}
+
+	if builddsn != "" {
+		dsnRedis = builddsn
 	}
 
 	broker, err := gmq.NewBrokerRedis(dsnRedis)
@@ -130,12 +153,22 @@ func main() {
 
 	} else if cmdDelQueue {
 		delQueue(ctx, broker, queueName)
+
+	} else if cmdCleanQueue {
+		cleanQueue(ctx, broker, queueName, ago)
+
 	} else {
 		flag.Usage()
 		os.Exit(1)
 	}
 
 	fmt.Print("\n")
+}
+
+func cleanQueue(ctx context.Context, broker gmq.Broker, queueName string, ago int64) {
+	cutoff := time.Second * time.Duration(ago)
+	err := broker.DeleteAgo(ctx, queueName, cutoff)
+	gutil.ExitOnErr(err)
 }
 
 func listQueue(ctx context.Context, broker gmq.Broker) {
@@ -337,6 +370,7 @@ func mdbcliUsage() {
 	fmt.Printf("  -add add certain message by offering its queue, id and payload \n\n\t -add -i <msgId> -q <queueName> -p <payload> \n\n")
 	fmt.Printf("  -del delete a certain message with by offering its queue and id \n\n\t -del -i <msgId> -q <queueName> \n\n")
 	fmt.Printf("  -delqueue delete queue \n\n\t -delqueue -q <queueName>\n\n")
+	fmt.Printf("  -cleanqueue delete expired message(s) \n\n\t -cleanqueue -q <queueName> -ago <ago in seconds> \n\n")
 	fmt.Printf("  -listqueue list all queue names \n\n")
 	fmt.Printf("  -pause pause queue consumption \n\n\t -pause -q <queueName>\n\n")
 	fmt.Printf("  -resume resume queue consumption \n\n\t -resume -q <queueName>\n\n")
