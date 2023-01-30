@@ -150,7 +150,7 @@ func testBroker_DeleteAgo(t *testing.T, broker gmq.Broker) {
 
 	restIfNoMsg := time.Millisecond * time.Duration(10)
 	msgMaxTTL := time.Millisecond * time.Duration(40)
-	msgTTLUniq := time.Millisecond * time.Duration(1)
+	msgTTLUniq := time.Millisecond * time.Duration(10)
 
 	glogging.Init([]string{"stderr"}, "warn")
 	srv := gmq.NewServer(ctx, broker, &gmq.Config{MsgMaxTTL: msgMaxTTL, RestIfNoMsg: restIfNoMsg})
@@ -459,7 +459,7 @@ func testBroker_ListFailed(t *testing.T, broker gmq.Broker) {
 	queueFoo := grand.String(10)
 	groupBar := grand.String(10)
 
-	msgTTLUniq := time.Millisecond * time.Duration(1)
+	msgTTLUniq := time.Millisecond * time.Duration(10)
 
 	// mark msg1 fail twice
 	msg1 := GenerateNewMsg()
@@ -756,7 +756,7 @@ func testBroker_AutoDeduplicateFailedMsg(t *testing.T, broker gmq.Broker) {
 	clock := gmq.NewSimulatedClock(now)
 	broker.SetClock(clock)
 
-	msgTTLUniq := time.Millisecond * time.Duration(1)
+	msgTTLUniq := time.Millisecond * time.Duration(10)
 
 	_, err := broker.Enqueue(ctx, msgWant, gmq.OptUniqueIn(msgTTLUniq))
 	require.NoError(t, err)
