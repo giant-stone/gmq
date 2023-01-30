@@ -59,9 +59,13 @@ var buildts = ""
 var builddsn = ""
 var cmdShowVer bool
 
+const (
+	DefaultDSN = "redis://127.0.0.1:6379/0"
+)
+
 func main() {
 	flag.StringVar(&loglevel, "l", "debug", "loglevel debug,info,warn,error")
-	flag.StringVar(&dsnRedis, "d", "redis://127.0.0.1:6379/0", "redis DSN")
+	flag.StringVar(&dsnRedis, "d", "", "redis DSN")
 
 	// commands
 	flag.BoolVar(&cmdPrintStats, "stat", false, "print queue stats")
@@ -114,8 +118,11 @@ func main() {
 		os.Exit(0)
 	}
 
-	if builddsn != "" {
+	if dsnRedis == "" {
 		dsnRedis = builddsn
+	}
+	if dsnRedis == "" {
+		dsnRedis = DefaultDSN
 	}
 
 	broker, err := gmq.NewBrokerRedis(dsnRedis)
