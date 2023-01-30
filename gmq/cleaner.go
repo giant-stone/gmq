@@ -43,7 +43,7 @@ func (it *Cleaner) start() {
 	it.exec()
 
 	go func() {
-		t := time.NewTicker(time.Hour * time.Duration(6))
+		t := time.NewTicker(it.msgMaxTTL / 2)
 
 		for {
 			select {
