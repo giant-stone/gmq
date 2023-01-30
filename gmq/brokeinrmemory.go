@@ -139,7 +139,11 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 	}
 
 	msgHistory := it.failedHistory[queueName]
-	for eMsgId := it.listFailed[queueName].Front(); eMsgId != nil; eMsgId = eMsgId.Next() {
+	listFailed, ok := it.listFailed[queueName]
+	if !ok {
+		return nil
+	}
+	for eMsgId := listFailed.Front(); eMsgId != nil; eMsgId = eMsgId.Next() {
 		msgId := eMsgId.Value.(string)
 
 		if l, ok := msgHistory[msgId]; ok {
@@ -150,7 +154,7 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 				if rawMsg.Created < cutoff {
 					// delete all history items have expired
 					delete(msgHistory, msgId)
-					it.listFailed[queueName].Remove(eMsgId)
+					listFailed.Remove(eMsgId)
 
 				} else {
 					for e := l.Front(); e != nil; e = e.Next() {
