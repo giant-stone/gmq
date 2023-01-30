@@ -114,8 +114,6 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 	defer it.lock.Unlock()
 
 	now := it.getNow()
-	nowInMs := now.UnixMilli()
-
 	cutoff := now.Add(-duration).UnixMilli()
 
 	for _, stateList := range []map[string]*list.List{
@@ -129,9 +127,7 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 				msgs := it.msgDetail[queueName]
 				rawMsg := msgs[msgId]
 
-				if rawMsg.Expiredat > nowInMs {
-					continue
-				} else if rawMsg.Expiredat == 0 && rawMsg.Created > cutoff {
+				if rawMsg.Created > cutoff {
 					continue
 				}
 
@@ -151,20 +147,16 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 			if e != nil {
 				rawMsg := e.Value.(*Msg)
 
-				a := rawMsg.Expiredat > 0 && rawMsg.Expiredat < nowInMs
-				b := rawMsg.Expiredat == 0 && rawMsg.Created < cutoff
-				hasExpired := a || b
-				if hasExpired {
+				if rawMsg.Created < cutoff {
+					// delete all history items have expired
 					delete(msgHistory, msgId)
-
 					it.listFailed[queueName].Remove(eMsgId)
+
 				} else {
 					for e := l.Front(); e != nil; e = e.Next() {
 						rawMsg := e.Value.(*Msg)
 
-						if rawMsg.Expiredat > nowInMs {
-							continue
-						} else if rawMsg.Expiredat == 0 && rawMsg.Created > cutoff {
+						if rawMsg.Created > cutoff {
 							continue
 						}
 
@@ -313,17 +305,20 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	now := it.getNow()
 	nowInMs := now.UnixMilli()
 
-	if uniqExpiredAt, ok := it.msgUniq[queueName][msgId]; ok {
-		if uniqExpiredAt > 0 && uniqExpiredAt > nowInMs {
+	if uniqExpireAt, ok := it.msgUniq[queueName][msgId]; ok {
+		if uniqExpireAt > nowInMs {
 			return nil, ErrMsgIdConflict
 		}
 	}
 
-	var expiredAt int64
+	var expireAt int64
 	if uniqueInMs > 0 {
-		expiredAt = now.Add(time.Millisecond * time.Duration(uniqueInMs)).UnixMilli()
-		it.msgUniq[queueName][msgId] = expiredAt
+		expireAt = now.Add(time.Millisecond * time.Duration(uniqueInMs)).UnixMilli()
+	} else {
+		expireAt = now.Add(DefaultTTLMsgUniq).UnixMilli()
 	}
+
+	it.msgUniq[queueName][msgId] = expireAt
 
 	if msg, ok := it.msgDetail[queueName][msgId]; ok {
 		if msg.State == MsgStatePending || msg.State == MsgStateProcessing {
@@ -335,13 +330,13 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	l.PushBack(msgId)
 
 	rawMsg := &Msg{
-		Created:   nowInMs,
-		Expiredat: expiredAt,
-		Id:        msgId,
-		Payload:   payload,
-		Queue:     queueName,
-		State:     MsgStatePending,
-		Updated:   nowInMs,
+		Created:  nowInMs,
+		Expireat: expireAt,
+		Id:       msgId,
+		Payload:  payload,
+		Queue:    queueName,
+		State:    MsgStatePending,
+		Updated:  nowInMs,
 	}
 	it.msgDetail[queueName][msgId] = rawMsg
 
@@ -372,11 +367,7 @@ func (it *BrokerInMemory) Fail(ctx context.Context, msg IMsg, errFail error) err
 	nowInMs := now.UnixMilli()
 	rawMsg.Updated = nowInMs
 
-	if rawMsg.Expiredat == 0 {
-		delete(it.msgDetail[queueName], msgId)
-	} else if rawMsg.Expiredat > 0 && rawMsg.Expiredat < now.UnixMilli() {
-		delete(it.msgDetail[queueName], msgId)
-	}
+	delete(msgs, msgId)
 
 	if l, ok := it.listProcessing[queueName]; ok {
 		removeStringElementFromList(l, msgId)
@@ -428,25 +419,18 @@ func (it *BrokerInMemory) Complete(ctx context.Context, msg IMsg) error {
 	if !ok {
 		return ErrNoMsg
 	}
-	rawMsg, ok := msgs[msgId]
+	_, ok = msgs[msgId]
 	if !ok {
 		return ErrNoMsg
 	}
 
-	now := it.getNow()
-	if rawMsg.Expiredat == 0 {
-		delete(it.msgDetail[queueName], msgId)
-	} else if rawMsg.Expiredat > 0 && rawMsg.Expiredat < now.UnixMilli() {
-		delete(it.msgDetail[queueName], msgId)
-	} else {
-		rawMsg.State = MsgStateCompleted
-		rawMsg.Updated = now.UnixMilli()
-	}
+	delete(msgs, msgId)
 
 	if l, ok := it.listProcessing[queueName]; ok {
 		removeStringElementFromList(l, msgId)
 	}
 
+	now := it.getNow()
 	queueStat := it.listStat[queueName]
 	todayYYYYMMDD := now.Format("2006-01-02")
 	for e := queueStat.Back(); e != nil; e = e.Prev() {
@@ -484,7 +468,7 @@ func (it *BrokerInMemory) GetMsg(ctx context.Context, queueName string, msgId st
 	if msg, ok := msgs[msgId]; !ok {
 		return nil, ErrNoMsg
 	} else {
-		if msg.Expiredat > 0 && msg.Expiredat < it.getNow().UnixMilli() {
+		if msg.Expireat > 0 && msg.Expireat < it.getNow().UnixMilli() {
 			return nil, ErrNoMsg
 		}
 

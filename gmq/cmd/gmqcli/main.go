@@ -313,14 +313,14 @@ func printMsg(msg *gmq.Msg) {
 		fmt.Printf("  Updated=%d (%s) \n", msg.Updated, t.Format(time.RFC3339))
 	}
 
-	if msg.Expiredat > 0 {
-		t := time.UnixMilli(msg.Expiredat)
+	if msg.Expireat > 0 {
+		t := time.UnixMilli(msg.Expireat)
 		if useUTC {
 			t = t.UTC()
 		} else {
 			t = t.Local()
 		}
-		fmt.Printf("  Expiredat=%d (%s) \n", msg.Expiredat, t.Format(time.RFC3339))
+		fmt.Printf("  Expiredat=%d (%s) \n", msg.Expireat, t.Format(time.RFC3339))
 	}
 }
 

@@ -10,4 +10,5 @@
 
 ignore/
 *.rdb
+*.dev
 *.pro

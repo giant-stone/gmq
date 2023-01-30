@@ -14,6 +14,10 @@ const (
 )
 
 const (
+	DefaultTTLMsgUniq = time.Second * time.Duration(60*60*24) // 1 day
+)
+
+const (
 	DefaultMaxItemsLimit = 10
 )
 

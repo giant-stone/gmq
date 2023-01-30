@@ -29,7 +29,7 @@ func testBroker_Enqueue(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload())
 	require.Equal(t, gmq.MsgStatePending, msgGot.State)
 	require.Equal(t, now, time.UnixMilli(msgGot.Created).Unix())
-	require.Equal(t, msgGot.Expiredat, int64(0))
+	require.Equal(t, time.Unix(now, 0).Add(gmq.DefaultTTLMsgUniq).Unix(), time.UnixMilli(msgGot.Expireat).Unix())
 	require.Equal(t, msgGot.Err, "")
 	require.Equal(t, now, time.UnixMilli(msgGot.Updated).Unix())
 }
@@ -54,7 +54,7 @@ func testBroker_GetMsg(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload())
 	require.Equal(t, gmq.MsgStatePending, msgGot.State)
 	require.Equal(t, now, time.UnixMilli(msgGot.Created).Unix())
-	require.Equal(t, msgGot.Expiredat, int64(0))
+	require.Equal(t, time.Unix(now, 0).Add(gmq.DefaultTTLMsgUniq).Unix(), time.UnixMilli(msgGot.Expireat).Unix())
 	require.Equal(t, msgGot.Err, "")
 	require.Equal(t, now, time.UnixMilli(msgGot.Updated).Unix())
 }
@@ -85,7 +85,7 @@ func testBroker_Dequeue(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload())
 	require.Equal(t, gmq.MsgStateProcessing, msgGot.State)
 	require.Equal(t, now, time.UnixMilli(msgGot.Created).Unix())
-	require.Equal(t, msgGot.Expiredat, int64(0))
+	require.Equal(t, time.Unix(now, 0).Add(gmq.DefaultTTLMsgUniq).Unix(), time.UnixMilli(msgGot.Expireat).Unix())
 	require.Equal(t, msgGot.Err, "")
 	require.Equal(t, now, time.UnixMilli(msgGot.Updated).Unix())
 }
@@ -150,6 +150,8 @@ func testBroker_DeleteAgo(t *testing.T, broker gmq.Broker) {
 
 	restIfNoMsg := time.Millisecond * time.Duration(10)
 	msgMaxTTL := time.Millisecond * time.Duration(40)
+	msgTTLUniq := time.Millisecond * time.Duration(1)
+
 	glogging.Init([]string{"stderr"}, "warn")
 	srv := gmq.NewServer(ctx, broker, &gmq.Config{MsgMaxTTL: msgMaxTTL, RestIfNoMsg: restIfNoMsg})
 	mux := gmq.NewMux()
@@ -161,7 +163,7 @@ func testBroker_DeleteAgo(t *testing.T, broker gmq.Broker) {
 	err := srv.Run(mux)
 	require.NoError(t, err, "srv.Run")
 
-	_, err = broker.Enqueue(ctx, msg)
+	_, err = broker.Enqueue(ctx, msg, gmq.OptUniqueIn(msgTTLUniq))
 	require.NoError(t, err)
 
 	// wait consumer done
@@ -215,7 +217,7 @@ func testBroker_DeleteAgo(t *testing.T, broker gmq.Broker) {
 	} {
 		keys, err := broker.ListMsg(ctx, msg.Queue, state, 0, 0)
 		require.NoError(t, err)
-		require.Empty(t, keys)
+		require.Empty(t, keys, "state=%s", state)
 	}
 
 	_, err = broker.GetMsg(ctx, msg.Queue, msg.Id)
@@ -319,7 +321,7 @@ func testBroker_Fail(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, msgWant.GetPayload(), msgGotFailed.GetPayload())
 	require.Equal(t, gmq.MsgStateFailed, msgGotFailed.State)
 	require.Equal(t, now, time.UnixMilli(msgGotFailed.Created).Unix())
-	require.Equal(t, msgGotFailed.Expiredat, int64(0))
+	require.Equal(t, time.Unix(now, 0).Add(gmq.DefaultTTLMsgUniq).Unix(), time.UnixMilli(msgGotFailed.Expireat).Unix())
 	require.Equal(t, msgGotFailed.Err, errFail.Error())
 	require.Equal(t, now, time.UnixMilli(msgGotFailed.Updated).Unix())
 
@@ -450,19 +452,28 @@ func testBroker_ListFailed(t *testing.T, broker gmq.Broker) {
 
 	ctx := context.Background()
 
+	now := time.Now()
+	clock := gmq.NewSimulatedClock(now)
+	broker.SetClock(clock)
+
 	queueFoo := grand.String(10)
 	groupBar := grand.String(10)
+
+	msgTTLUniq := time.Millisecond * time.Duration(1)
 
 	// mark msg1 fail twice
 	msg1 := GenerateNewMsg()
 	msg1.Queue = queueFoo
-	_, err := broker.Enqueue(ctx, msg1)
+	_, err := broker.Enqueue(ctx, msg1, gmq.OptUniqueIn(msgTTLUniq))
 	require.NoError(t, err)
 	_, err = broker.Dequeue(ctx, msg1.Queue)
 	require.NoError(t, err)
 	msg1Err := fmt.Errorf("error %s, queueName=%s msgId=%s", grand.String(5), msg1.Queue, msg1.Id)
 	err = broker.Fail(ctx, msg1, msg1Err)
 	require.NoError(t, err)
+
+	clock.AdvanceTime(msgTTLUniq * 2)
+	time.Sleep(msgTTLUniq * 2)
 
 	_, err = broker.Enqueue(ctx, msg1)
 	require.NoError(t, err)
@@ -508,10 +519,16 @@ func testBroker_ListFailedMaxItems(t *testing.T, broker gmq.Broker) {
 
 	ctx := context.Background()
 
+	now := time.Now()
+	clock := gmq.NewSimulatedClock(now)
+	broker.SetClock(clock)
+
+	msgTTLUniq := time.Millisecond * time.Duration(10)
+
 	msg := GenerateNewMsg()
 	failErrs := []string{}
 	for i := 0; i < gmq.DefaultMaxItemsLimit*2; i += 1 {
-		_, err := broker.Enqueue(ctx, msg)
+		_, err := broker.Enqueue(ctx, msg, gmq.OptUniqueIn(msgTTLUniq))
 		require.NoError(t, err)
 		_, err = broker.Dequeue(ctx, msg.Queue)
 		require.NoError(t, err)
@@ -519,6 +536,9 @@ func testBroker_ListFailedMaxItems(t *testing.T, broker gmq.Broker) {
 		failErrs = append(failErrs, failErr.Error())
 		err = broker.Fail(ctx, msg, failErr)
 		require.NoError(t, err)
+
+		clock.AdvanceTime(msgTTLUniq * 2)
+		time.Sleep(msgTTLUniq * 2)
 	}
 
 	msgs, err := broker.ListFailed(ctx, msg.Queue, msg.Id, int64(gmq.DefaultMaxItemsLimit*2), 0)
@@ -732,13 +752,22 @@ func testBroker_AutoDeduplicateFailedMsg(t *testing.T, broker gmq.Broker) {
 	msgWant := GenerateNewMsg()
 	ctx := context.Background()
 
-	_, err := broker.Enqueue(ctx, msgWant)
+	now := time.Now()
+	clock := gmq.NewSimulatedClock(now)
+	broker.SetClock(clock)
+
+	msgTTLUniq := time.Millisecond * time.Duration(1)
+
+	_, err := broker.Enqueue(ctx, msgWant, gmq.OptUniqueIn(msgTTLUniq))
 	require.NoError(t, err)
 	err = broker.Fail(ctx, msgWant, errors.New("something wrong"))
 	require.NoError(t, err)
 
+	clock.AdvanceTime(msgTTLUniq * 2)
+	time.Sleep(msgTTLUniq * 2)
+
 	// it does not Auto Deduplicate if the message state is not in {pending,processing}
-	_, err = broker.Enqueue(ctx, msgWant)
+	_, err = broker.Enqueue(ctx, msgWant, gmq.OptUniqueIn(msgTTLUniq))
 	require.NoError(t, err)
 
 	_, err = broker.Dequeue(ctx, msgWant.Queue)
@@ -763,12 +792,22 @@ func testBroker_AutoDeduplicateCompletedMsg(t *testing.T, broker gmq.Broker) {
 	msgWant := GenerateNewMsg()
 	ctx := context.Background()
 
-	_, err := broker.Enqueue(ctx, msgWant)
+	now := time.Now()
+	clock := gmq.NewSimulatedClock(now)
+	broker.SetClock(clock)
+
+	msgTTLUniq := time.Millisecond * time.Duration(10)
+
+	_, err := broker.Enqueue(ctx, msgWant, gmq.OptUniqueIn(msgTTLUniq))
 	require.NoError(t, err)
 	_, err = broker.Dequeue(ctx, msgWant.Queue)
 	require.NoError(t, err)
 	err = broker.Complete(ctx, msgWant)
 	require.NoError(t, err)
+
+	clock.AdvanceTime(msgTTLUniq * 2)
+	time.Sleep(msgTTLUniq * 2)
+
 	_, err = broker.Enqueue(ctx, msgWant)
 	require.NoError(t, err)
 

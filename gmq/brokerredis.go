@@ -170,36 +170,6 @@ func (it *BrokerRedis) updateQueueList(ctx context.Context, queueName string) (e
 	return
 }
 
-// script(Enqueue) enqueues a message.
-//
-// Input:
-// KEYS[1] -> <namespace>:<queueName>:msg:<msgId>
-// KEYS[2] -> <namespace>:<queueName>:pending
-// --
-// ARGV[1] -> <message payload>
-// ARGV[2] -> "pending"
-// ARGV[3] -> <current unix time in milliseconds>
-// ARGV[4] -> <msgId>
-//
-// Output:
-// Returns 0 if successfully enqueued
-// Returns 1 if message ID already exists
-//
-//	list item order from left to right, head to tail, fresh to old.
-var scriptEnqueue = redis.NewScript(`
-if redis.call("EXISTS", KEYS[1]) == 1 then
-	return 1
-end
-redis.call("HSET", KEYS[1],
-           "payload", ARGV[1],
-           "state",   ARGV[2],
-           "created", ARGV[3],
-					 "updated", ARGV[3],
-					 "expireat", 0)
-redis.call("LPUSH", KEYS[2], ARGV[4])
-return 0
-`)
-
 // scriptEnqueueUnique enqueues a message with unique in duration constraint
 //
 // Input:
@@ -221,13 +191,13 @@ var scriptEnqueueUnique = redis.NewScript(`
 if redis.call("EXISTS", KEYS[1]) == 1 then
 	return 1
 end
-redis.call("PSETEX", KEYS[1], ARGV[1], ARGV[5])
+redis.call("PSETEX", KEYS[1], ARGV[1], ARGV[6])
 redis.call("HSET", KEYS[2],
-           "payload", ARGV[2],
-           "state",   ARGV[3],
-           "created", ARGV[4],
-					 "updated", ARGV[4],
-					 "expireat", ARGV[5])
+ "payload", ARGV[2],
+ "state",   ARGV[3],
+ "created", ARGV[4],
+ "updated", ARGV[4],
+ "expireat", ARGV[5])
 redis.call("RPUSH", KEYS[3], ARGV[6])
 return 0
 `)
@@ -275,64 +245,51 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 	}
 
 	nowInMs := now.UnixMilli()
-	var expiredAt int64
+	var expireAt int64
 	var resI interface{}
+
 	if uniqueInMs == 0 {
-		keys := []string{
-			NewKeyMsgDetail(it.namespace, queueName, msgId),
-			NewKeyQueuePending(it.namespace, queueName),
-		}
+		uniqueInMs = DefaultTTLMsgUniq.Milliseconds()
+	}
+	expireAt = now.Add(time.Millisecond * time.Duration(uniqueInMs)).UnixMilli()
 
-		args := []interface{}{
-			payload,
-			MsgStatePending,
-			nowInMs,
-			msgId,
-		}
-		resI, err = scriptEnqueue.Run(ctx, it.cli, keys, args...).Result()
-	} else {
-		expiredAt = now.Add(time.Millisecond * time.Duration(uniqueInMs)).UnixMilli()
-
-		keys := []string{
-			NewKeyMsgUnique(it.namespace, queueName, msgId),
-			NewKeyMsgDetail(it.namespace, queueName, msgId),
-			NewKeyQueuePending(it.namespace, queueName),
-		}
-
-		args := []interface{}{
-			uniqueInMs,
-			payload,
-			MsgStatePending,
-			nowInMs,
-			expiredAt,
-			msgId,
-		}
-		resI, err = scriptEnqueueUnique.Run(ctx, it.cli, keys, args...).Result()
+	keys := []string{
+		NewKeyMsgUnique(it.namespace, queueName, msgId),
+		NewKeyMsgDetail(it.namespace, queueName, msgId),
+		NewKeyQueuePending(it.namespace, queueName),
 	}
 
+	args := []interface{}{
+		uniqueInMs,
+		payload,
+		MsgStatePending,
+		nowInMs,
+		expireAt,
+		msgId,
+	}
+	resI, err = scriptEnqueueUnique.Run(ctx, it.cli, keys, args...).Result()
+
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	rt, ok := resI.(int64)
 	if !ok {
-		err = ErrInternal
-		return
+		return nil, ErrInternal
 	}
 
 	if rt == LuaReturnCodeError {
-		err = ErrMsgIdConflict
-		return
+		return nil, ErrMsgIdConflict
 	}
 
 	return &Msg{
-		Created:   nowInMs,
-		Expiredat: expiredAt,
-		Id:        msgId,
-		Payload:   payload,
-		Queue:     queueName,
-		State:     MsgStatePending,
-		Updated:   nowInMs,
+		Created:  nowInMs,
+		Expireat: expireAt,
+		Id:       msgId,
+		Payload:  payload,
+		Queue:    queueName,
+		State:    MsgStatePending,
+		Updated:  nowInMs,
 	}, nil
 }
 
@@ -650,7 +607,7 @@ func (it *BrokerRedis) deleteAgoFailedHistoryItem(ctx context.Context, queueName
 				return false, err
 			}
 		} else {
-			if rawMsg.Created == 0 || (rawMsg.Created > 0 && rawMsg.Created < cutoff) || (rawMsg.Expiredat > 0 && rawMsg.Expiredat <= cutoff) {
+			if rawMsg.Created == 0 || (rawMsg.Created > 0 && rawMsg.Created < cutoff) || (rawMsg.Expireat > 0 && rawMsg.Expireat <= cutoff) {
 				if idx == 0 {
 					return true, nil
 				}
@@ -780,13 +737,14 @@ func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg
 	}
 
 	return &Msg{
-		Payload: []byte(payload),
-		Id:      msgId,
-		Queue:   queueName,
-		Created: gstr.Atoi64(values["created"]),
-		Err:     values["err"],
-		State:   values["state"],
-		Updated: gstr.Atoi64(values["updated"]),
+		Payload:  []byte(payload),
+		Id:       msgId,
+		Queue:    queueName,
+		Created:  gstr.Atoi64(values["created"]),
+		Expireat: gstr.Atoi64(values["expireat"]),
+		Err:      values["err"],
+		State:    values["state"],
+		Updated:  gstr.Atoi64(values["updated"]),
 	}, nil
 }
 
@@ -1014,14 +972,14 @@ func parseMsgFromRedisLuaHgetallResult(pairs interface{}) (msg *Msg, err error) 
 	state, _ := values["state"].(string)
 	created, _ := values["created"].(string)
 	updated, _ := values["updated"].(string)
-	expiredat, _ := values["expiredat"].(string)
+	expireat, _ := values["expireat"].(string)
 
 	return &Msg{
-		Payload:   []byte(payload),
-		State:     state,
-		Created:   gstr.Atoi64(created),
-		Expiredat: gstr.Atoi64(expiredat),
-		Updated:   gstr.Atoi64(updated),
+		Payload:  []byte(payload),
+		State:    state,
+		Created:  gstr.Atoi64(created),
+		Expireat: gstr.Atoi64(expireat),
+		Updated:  gstr.Atoi64(updated),
 	}, nil
 }
 
