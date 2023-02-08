@@ -3,7 +3,6 @@ package gmq
 import (
 	"container/list"
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -15,25 +14,77 @@ const (
 	DefaultMaxBytes = 1024 * 1024 * 32 // 32 MB
 )
 
+type MsgHistory map[string]*list.List // key is <msgId>, value is <msg>
+
 type BrokerInMemory struct {
 	BrokerUnimplemented
 
 	clock Clock
-	lock  sync.RWMutex
 
-	listPending    map[string]*list.List // key is queueName
-	listWaiting    map[string]*list.List
+	failedHistory map[string]MsgHistory // key is <queueName>
+
+	utc  bool
+	lock sync.RWMutex
+
+	listPending    map[string]*list.List // key is <queueName>, list.Element value is <messageId>
 	listProcessing map[string]*list.List
-	listCompleted  map[string]*list.List
 	listFailed     map[string]*list.List
 
-	listStat map[string]*list.List // key is queueName, list.Element value is *QueueDailyStat
+	listStat map[string]*list.List // key is <queueName>, list.Element value is *QueueDailyStat
 
-	msgDetail map[string]*Msg // key is msgId
+	msgDetail map[string]map[string]*Msg  // key is <queueName>, value is <msgId> => <msg>
+	msgUniq   map[string]map[string]int64 // key is <queueName>, value is <msgId> => <expireat>
 
 	maxBytes int64
 
-	queuesPaused map[string]struct{} // key is queueName
+	queuesPaused map[string]struct{} // key is <queueName>
+}
+
+// ListQueue implements Broker
+func (it *BrokerInMemory) ListQueue(ctx context.Context) (rs []string, err error) {
+	it.lock.RLock()
+	defer it.lock.RUnlock()
+
+	rs = make([]string, 0)
+	for key := range it.listStat {
+		rs = append(rs, key)
+	}
+	return rs, nil
+}
+
+// UTC implements Broker
+func (it *BrokerInMemory) UTC(flag bool) {
+	it.utc = flag
+}
+
+// ListFailed implements Broker
+func (it *BrokerInMemory) ListFailed(ctx context.Context, queueName string, msgId string, limit int64, offset int64) (rs []*Msg, err error) {
+	it.lock.RLock()
+	defer it.lock.RUnlock()
+
+	rs = make([]*Msg, 0)
+	n := int64(0)
+	o := int64(0)
+	if msgHistory, ok := it.failedHistory[queueName]; ok {
+		if l, ok := msgHistory[msgId]; ok {
+			for e := l.Back(); e != nil; e = e.Prev() {
+				if offset > 0 && o < offset {
+					o += 1
+					continue
+				}
+
+				msg := e.Value.(*Msg)
+				rs = append(rs, msg)
+				n += 1
+
+				if n > limit {
+					break
+				}
+			}
+		}
+	}
+
+	return rs, nil
 }
 
 type BrokerInMemoryOpts struct {
@@ -46,9 +97,7 @@ func (it *BrokerInMemory) Close() error {
 	defer it.lock.Unlock()
 
 	it.listPending = nil
-	it.listWaiting = nil
 	it.listProcessing = nil
-	it.listCompleted = nil
 	it.listFailed = nil
 	it.listStat = nil
 
@@ -59,104 +108,65 @@ func (it *BrokerInMemory) Close() error {
 	return nil
 }
 
-func newMsgId(queueName, id string) string {
-	return fmt.Sprintf("%s:%s", queueName, id)
-}
-
-// Complete implements Broker
-func (it *BrokerInMemory) Complete(ctx context.Context, msg IMsg) error {
-	it.lock.Lock()
-	defer it.lock.Unlock()
-
-	queueName := msg.GetQueue()
-	msgId := newMsgId(queueName, msg.GetId())
-	rawMsg, ok := it.msgDetail[msgId]
-	if !ok {
-		return ErrNoMsg
-	}
-
-	rawMsg.State = MsgStateCompleted
-
-	now := it.clock.Now()
-	nowInMs := now.UnixMilli()
-	rawMsg.Updated = nowInMs
-
-	if l, ok := it.listProcessing[queueName]; ok {
-		removeElementFromList(l, msgId)
-	}
-
-	it.listCompleted[queueName].PushBack(msgId)
-
-	today := it.clock.Now()
-	todayYYYYMMDD := today.Format("2006-01-02")
-	l, ok := it.listStat[queueName]
-	if !ok {
-		it.listStat[queueName] = list.New()
-	}
-
-	for e := l.Back(); e != nil; e = e.Prev() {
-		qds, ok := e.Value.(*QueueDailyStat)
-		if !ok {
-			continue
-		}
-		tsStat, _ := gtime.Yyyymmdd2unixTimeUtc(qds.Date)
-		tsToday, _ := gtime.Yyyymmdd2unixTimeUtc(todayYYYYMMDD)
-		if tsStat == tsToday {
-			qds.Completed += 1
-			return nil
-		} else if tsStat < tsToday {
-			l.PushBack(&QueueDailyStat{
-				Date:      todayYYYYMMDD,
-				Completed: 1,
-				Failed:    0,
-			})
-			return nil
-		}
-	}
-
-	// l is empty
-	l.PushBack(&QueueDailyStat{
-		Date:      todayYYYYMMDD,
-		Completed: 1,
-		Failed:    0,
-	})
-
-	return nil
-}
-
 // DeleteAgo implements Broker
 func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, duration time.Duration) error {
 	it.lock.Lock()
 	defer it.lock.Unlock()
 
-	now := it.clock.Now()
-	nowInMs := now.UnixMilli()
+	now := it.getNow()
+	cutoff := now.Add(-duration).UnixMilli()
 
 	for _, stateList := range []map[string]*list.List{
 		it.listPending,
-		it.listWaiting,
 		it.listProcessing,
-		it.listCompleted,
-		it.listFailed,
 	} {
 		if l, ok := stateList[queueName]; ok {
 			for e := l.Front(); e != nil; e = e.Next() {
 				msgId := e.Value.(string)
-				rawMsg := it.msgDetail[msgId]
 
-				fmt.Println(msgId, time.UnixMilli(rawMsg.Created), time.UnixMilli(rawMsg.Expiredat))
+				msgs := it.msgDetail[queueName]
+				rawMsg := msgs[msgId]
 
-				if rawMsg.Expiredat > 0 && rawMsg.Expiredat > nowInMs {
+				if rawMsg.Created > cutoff {
 					continue
-				} else if rawMsg.Expiredat == 0 {
-					expiredat := time.UnixMilli(rawMsg.Created).Add(duration).UnixMilli()
-					if expiredat > nowInMs {
-						continue
-					}
 				}
 
-				removeElementFromList(l, msgId)
-				delete(it.msgDetail, msgId)
+				removeStringElementFromList(l, msgId)
+				delete(msgs, msgId)
+				delete(it.msgUniq[queueName], msgId)
+			}
+		}
+	}
+
+	msgHistory := it.failedHistory[queueName]
+	listFailed, ok := it.listFailed[queueName]
+	if !ok {
+		return nil
+	}
+	for eMsgId := listFailed.Front(); eMsgId != nil; eMsgId = eMsgId.Next() {
+		msgId := eMsgId.Value.(string)
+
+		if l, ok := msgHistory[msgId]; ok {
+			e := l.Front()
+			if e != nil {
+				rawMsg := e.Value.(*Msg)
+
+				if rawMsg.Created < cutoff {
+					// delete all history items have expired
+					delete(msgHistory, msgId)
+					listFailed.Remove(eMsgId)
+
+				} else {
+					for e := l.Front(); e != nil; e = e.Next() {
+						rawMsg := e.Value.(*Msg)
+
+						if rawMsg.Created > cutoff {
+							continue
+						}
+
+						l.Remove(e)
+					}
+				}
 			}
 		}
 	}
@@ -165,38 +175,30 @@ func (it *BrokerInMemory) DeleteAgo(ctx context.Context, queueName string, durat
 }
 
 // DeleteMsg implements Broker
-func (it *BrokerInMemory) DeleteMsg(ctx context.Context, queueName string, id string) error {
+func (it *BrokerInMemory) DeleteMsg(ctx context.Context, queueName string, msgId string) error {
 	it.lock.Lock()
 	defer it.lock.Unlock()
 
-	msgId := newMsgId(queueName, id)
-
 	if l, ok := it.listPending[queueName]; ok {
-		removeElementFromList(l, msgId)
-	}
-
-	if l, ok := it.listWaiting[queueName]; ok {
-		removeElementFromList(l, msgId)
+		removeStringElementFromList(l, msgId)
 	}
 
 	if l, ok := it.listProcessing[queueName]; ok {
-		removeElementFromList(l, msgId)
-	}
-
-	if l, ok := it.listCompleted[queueName]; ok {
-		removeElementFromList(l, msgId)
+		removeStringElementFromList(l, msgId)
 	}
 
 	if l, ok := it.listFailed[queueName]; ok {
-		removeElementFromList(l, msgId)
+		removeStringElementFromList(l, msgId)
 	}
 
-	delete(it.msgDetail, msgId)
+	delete(it.msgDetail[queueName], msgId)
+	delete(it.msgUniq[queueName], msgId)
+	delete(it.failedHistory[queueName], msgId)
 
 	return nil
 }
 
-func removeElementFromList(l *list.List, b string) {
+func removeStringElementFromList(l *list.List, b string) {
 	for e := l.Front(); e != nil; e = e.Next() {
 		if a, ok := e.Value.(string); ok && a == b {
 			l.Remove(e)
@@ -210,24 +212,14 @@ func (it *BrokerInMemory) DeleteQueue(ctx context.Context, queueName string) err
 	it.lock.Lock()
 	defer it.lock.Unlock()
 
-	for _, stateList := range []map[string]*list.List{
-		it.listPending,
-		it.listWaiting,
-		it.listProcessing,
-		it.listCompleted,
-		it.listFailed,
-	} {
-		if l, ok := stateList[queueName]; ok {
-			for e := l.Front(); e != nil; e = e.Next() {
-				msgId := e.Value.(string)
+	delete(it.failedHistory, queueName)
 
-				removeElementFromList(l, msgId)
-				delete(it.msgDetail, msgId)
+	delete(it.listPending, queueName)
+	delete(it.listProcessing, queueName)
+	delete(it.listFailed, queueName)
 
-				delete(stateList, queueName)
-			}
-		}
-	}
+	delete(it.msgDetail, queueName)
+	delete(it.msgUniq, queueName)
 
 	return nil
 }
@@ -254,19 +246,25 @@ func (it *BrokerInMemory) Dequeue(ctx context.Context, queueName string) (*Msg, 
 	msgId := e.Value.(string)
 	listPending.Remove(e)
 
-	if listProcessing, ok := it.listProcessing[queueName]; !ok {
-		return nil, ErrNoMsg
-	} else {
-		listProcessing.PushBack(msgId)
-	}
+	it.listProcessing[queueName].PushBack(msgId)
 
-	rawMsg := it.msgDetail[msgId]
+	rawMsg := it.msgDetail[queueName][msgId]
 
-	now := it.clock.Now()
-	nowInMs := now.UnixMilli()
-	rawMsg.Updated = nowInMs
+	now := it.getNow()
+	rawMsg.Updated = now.UnixMilli()
 	rawMsg.State = MsgStateProcessing
 	return rawMsg, nil
+}
+
+func (it *BrokerInMemory) getNow() time.Time {
+	now := it.clock.Now()
+	if it.utc {
+		now = now.UTC()
+	} else {
+		now = now.Local()
+	}
+
+	return now
 }
 
 // Enqueue implements Broker
@@ -275,9 +273,9 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	defer it.lock.Unlock()
 
 	payload := msg.GetPayload()
-	id := msg.GetId()
-	if id == "" {
-		id = uuid.NewString()
+	msgId := msg.GetId()
+	if msgId == "" {
+		msgId = uuid.NewString()
 	}
 
 	queueName := msg.GetQueue()
@@ -308,12 +306,26 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 
 	it.updateQueueList(ctx, queueName)
 
-	now := it.clock.Now()
+	now := it.getNow()
 	nowInMs := now.UnixMilli()
-	msgId := newMsgId(queueName, id)
 
-	if msg, ok := it.msgDetail[msgId]; ok {
-		if msg.Expiredat > nowInMs {
+	if uniqExpireAt, ok := it.msgUniq[queueName][msgId]; ok {
+		if uniqExpireAt > nowInMs {
+			return nil, ErrMsgIdConflict
+		}
+	}
+
+	var expireAt int64
+	if uniqueInMs > 0 {
+		expireAt = now.Add(time.Millisecond * time.Duration(uniqueInMs)).UnixMilli()
+	} else {
+		expireAt = now.Add(DefaultTTLMsgUniq).UnixMilli()
+	}
+
+	it.msgUniq[queueName][msgId] = expireAt
+
+	if msg, ok := it.msgDetail[queueName][msgId]; ok {
+		if msg.State == MsgStatePending || msg.State == MsgStateProcessing {
 			return nil, ErrMsgIdConflict
 		}
 	}
@@ -321,21 +333,16 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	l := it.listPending[queueName]
 	l.PushBack(msgId)
 
-	var expiredAt int64
-	if uniqueInMs > 0 {
-		expiredAt = now.Add(time.Millisecond * time.Duration(uniqueInMs)).UnixMilli()
-	}
-
 	rawMsg := &Msg{
-		Created:   nowInMs,
-		Expiredat: expiredAt,
-		Id:        id,
-		Payload:   payload,
-		Queue:     queueName,
-		State:     MsgStatePending,
-		Updated:   nowInMs,
+		Created:  nowInMs,
+		Expireat: expireAt,
+		Id:       msgId,
+		Payload:  payload,
+		Queue:    queueName,
+		State:    MsgStatePending,
+		Updated:  nowInMs,
 	}
-	it.msgDetail[msgId] = rawMsg
+	it.msgDetail[queueName][msgId] = rawMsg
 
 	return rawMsg, nil
 }
@@ -346,49 +353,56 @@ func (it *BrokerInMemory) Fail(ctx context.Context, msg IMsg, errFail error) err
 	defer it.lock.Unlock()
 
 	queueName := msg.GetQueue()
-	msgId := newMsgId(queueName, msg.GetId())
-	rawMsg, ok := it.msgDetail[msgId]
+	msgId := msg.GetId()
+
+	msgs, ok := it.msgDetail[queueName]
+	if !ok {
+		return ErrNoMsg
+	}
+	rawMsg, ok := msgs[msgId]
 	if !ok {
 		return ErrNoMsg
 	}
 
 	rawMsg.Err = errFail.Error()
 	rawMsg.State = MsgStateFailed
-	now := it.clock.Now()
+
+	now := it.getNow()
 	nowInMs := now.UnixMilli()
 	rawMsg.Updated = nowInMs
 
+	delete(msgs, msgId)
+
+	if l, ok := it.listProcessing[queueName]; ok {
+		removeStringElementFromList(l, msgId)
+	}
 	it.listFailed[queueName].PushBack(msgId)
 
-	l, ok := it.listStat[queueName]
-	if !ok {
-		it.listStat[queueName] = list.New()
+	msgHistory := it.failedHistory[queueName]
+	if _, ok := msgHistory[msgId]; !ok {
+		msgHistory[msgId] = list.New()
+	}
+	msgHistory[msgId].PushBack(rawMsg)
+
+	if msgHistory[msgId].Len() > DefaultMaxItemsLimit {
+		msgHistory[msgId].Remove(msgHistory[msgId].Front())
 	}
 
-	today := it.clock.Now()
-	todayYYYYMMDD := today.Format("2006-01-02")
-	for e := l.Back(); e != nil; e = e.Prev() {
+	queueStat := it.listStat[queueName]
+	todayYYYYMMDD := now.Format("2006-01-02")
+	for e := queueStat.Back(); e != nil; e = e.Prev() {
 		qds, ok := e.Value.(*QueueDailyStat)
 		if !ok {
 			continue
 		}
-		tsStat, _ := gtime.Yyyymmdd2unixTimeUtc(qds.Date)
-		tsToday, _ := gtime.Yyyymmdd2unixTimeUtc(todayYYYYMMDD)
-		if tsStat == tsToday {
+
+		if todayYYYYMMDD == qds.Date {
 			qds.Failed += 1
-			return nil
-		} else if tsStat < tsToday {
-			l.PushBack(&QueueDailyStat{
-				Date:      todayYYYYMMDD,
-				Completed: 0,
-				Failed:    1,
-			})
 			return nil
 		}
 	}
 
-	// l is empty
-	l.PushBack(&QueueDailyStat{
+	queueStat.PushBack(&QueueDailyStat{
 		Date:      todayYYYYMMDD,
 		Completed: 0,
 		Failed:    1,
@@ -397,15 +411,71 @@ func (it *BrokerInMemory) Fail(ctx context.Context, msg IMsg, errFail error) err
 	return nil
 }
 
+// Complete implements Broker
+func (it *BrokerInMemory) Complete(ctx context.Context, msg IMsg) error {
+	it.lock.Lock()
+	defer it.lock.Unlock()
+
+	queueName := msg.GetQueue()
+	msgId := msg.GetId()
+
+	msgs, ok := it.msgDetail[queueName]
+	if !ok {
+		return ErrNoMsg
+	}
+	_, ok = msgs[msgId]
+	if !ok {
+		return ErrNoMsg
+	}
+
+	delete(msgs, msgId)
+
+	if l, ok := it.listProcessing[queueName]; ok {
+		removeStringElementFromList(l, msgId)
+	}
+
+	now := it.getNow()
+	queueStat := it.listStat[queueName]
+	todayYYYYMMDD := now.Format("2006-01-02")
+	for e := queueStat.Back(); e != nil; e = e.Prev() {
+		qds, ok := e.Value.(*QueueDailyStat)
+		if !ok {
+			continue
+		}
+
+		if todayYYYYMMDD == qds.Date {
+			qds.Completed += 1
+			return nil
+		}
+	}
+
+	// l is empty
+	queueStat.PushBack(&QueueDailyStat{
+		Date:      todayYYYYMMDD,
+		Completed: 1,
+		Failed:    0,
+	})
+
+	return nil
+}
+
 // GetMsg implements Broker
-func (it *BrokerInMemory) GetMsg(ctx context.Context, queueName string, id string) (*Msg, error) {
+func (it *BrokerInMemory) GetMsg(ctx context.Context, queueName string, msgId string) (*Msg, error) {
 	it.lock.RLock()
 	defer it.lock.RUnlock()
 
-	msgId := newMsgId(queueName, id)
-	if msg, ok := it.msgDetail[msgId]; !ok {
+	msgs, ok := it.msgDetail[queueName]
+	if !ok {
+		return nil, ErrNoMsg
+	}
+
+	if msg, ok := msgs[msgId]; !ok {
 		return nil, ErrNoMsg
 	} else {
+		if msg.Expireat > 0 && msg.Expireat < it.getNow().UnixMilli() {
+			return nil, ErrNoMsg
+		}
+
 		return msg, nil
 	}
 }
@@ -418,37 +488,27 @@ func (it *BrokerInMemory) GetStats(ctx context.Context) ([]*QueueStat, error) {
 	rs := make([]*QueueStat, 0)
 
 	for _, queueName := range it.listQueues() {
-		var pending, waiting, processing, completed, failed, total int64
+		var pending, processing, failed, total int64
 
 		if l, ok := it.listPending[queueName]; ok {
 			pending = int64(l.Len())
-		}
-
-		if l, ok := it.listWaiting[queueName]; ok {
-			waiting = int64(l.Len())
 		}
 
 		if l, ok := it.listProcessing[queueName]; ok {
 			processing = int64(l.Len())
 		}
 
-		if l, ok := it.listCompleted[queueName]; ok {
-			completed = int64(l.Len())
-		}
-
 		if l, ok := it.listFailed[queueName]; ok {
 			failed = int64(l.Len())
 		}
 
-		total = pending + waiting + processing + completed + failed
+		total = pending + processing + failed
 
 		rs = append(rs, &QueueStat{
 			Name:       queueName,
 			Total:      total,
 			Pending:    pending,
-			Waiting:    waiting,
 			Processing: processing,
-			Completed:  completed,
 			Failed:     failed,
 		})
 	}
@@ -469,8 +529,8 @@ func (it *BrokerInMemory) GetStatsByDate(ctx context.Context, YYYYMMDD string) (
 	it.lock.RLock()
 	defer it.lock.RUnlock()
 
-	today := it.clock.Now()
-	todayYYYYMMDD := today.Format("2006-01-02")
+	now := it.getNow()
+	todayYYYYMMDD := now.Format("2006-01-02")
 
 	rs := &QueueDailyStat{Date: todayYYYYMMDD}
 	for _, queueName := range it.listQueues() {
@@ -481,14 +541,13 @@ func (it *BrokerInMemory) GetStatsByDate(ctx context.Context, YYYYMMDD string) (
 					continue
 				}
 
-				tsStat, _ := gtime.Yyyymmdd2unixTimeUtc(qds.Date)
-				tsToday, _ := gtime.Yyyymmdd2unixTimeUtc(todayYYYYMMDD)
-				if tsStat != tsToday {
+				if qds.Date != todayYYYYMMDD {
 					continue
 				}
 
 				rs.Completed += qds.Completed
 				rs.Failed += qds.Failed
+				rs.Total += qds.Completed + qds.Failed
 			}
 		}
 	}
@@ -531,22 +590,17 @@ func (it *BrokerInMemory) ListMsg(ctx context.Context, queueName string, state s
 	case MsgStatePending:
 		{
 			l, ok = it.listPending[queueName]
-		}
-	case MsgStateWaiting:
-		{
-			l, ok = it.listWaiting[queueName]
+			break
 		}
 	case MsgStateProcessing:
 		{
 			l, ok = it.listProcessing[queueName]
-		}
-	case MsgStateCompleted:
-		{
-			l, ok = it.listCompleted[queueName]
+			break
 		}
 	case MsgStateFailed:
 		{
 			l, ok = it.listFailed[queueName]
+			break
 		}
 	}
 
@@ -564,6 +618,10 @@ func (it *BrokerInMemory) ListMsg(ctx context.Context, queueName string, state s
 		msgId := e.Value.(string)
 		rs = append(rs, msgId)
 		n += 1
+
+		if limit > 0 && n > int(limit) {
+			break
+		}
 	}
 
 	return rs, nil
@@ -600,27 +658,17 @@ func (it *BrokerInMemory) SetClock(c Clock) {
 func (it *BrokerInMemory) updateQueueList(ctx context.Context, queueName string) (err error) {
 	if _, ok := it.listPending[queueName]; !ok {
 		it.listPending[queueName] = list.New()
-	}
-
-	if _, ok := it.listWaiting[queueName]; !ok {
-		it.listWaiting[queueName] = list.New()
-	}
-
-	if _, ok := it.listProcessing[queueName]; !ok {
 		it.listProcessing[queueName] = list.New()
-	}
-
-	if _, ok := it.listCompleted[queueName]; !ok {
-		it.listCompleted[queueName] = list.New()
-	}
-
-	if _, ok := it.listFailed[queueName]; !ok {
 		it.listFailed[queueName] = list.New()
+
+		it.listStat[queueName] = list.New()
+
+		it.failedHistory[queueName] = make(MsgHistory)
+
+		it.msgDetail[queueName] = make(map[string]*Msg, 0)
+		it.msgUniq[queueName] = make(map[string]int64)
 	}
 
-	if _, ok := it.listStat[queueName]; !ok {
-		it.listStat[queueName] = list.New()
-	}
 	return nil
 }
 
@@ -628,14 +676,14 @@ func NewBrokerInMemory(opts *BrokerInMemoryOpts) (rs Broker, err error) {
 	broker := &BrokerInMemory{
 		clock:          NewWallClock(),
 		lock:           sync.RWMutex{},
+		failedHistory:  make(map[string]MsgHistory),
 		listPending:    make(map[string]*list.List),
-		listWaiting:    make(map[string]*list.List),
 		listProcessing: make(map[string]*list.List),
-		listCompleted:  make(map[string]*list.List),
 		listFailed:     make(map[string]*list.List),
 		listStat:       make(map[string]*list.List),
 		queuesPaused:   make(map[string]struct{}),
-		msgDetail:      make(map[string]*Msg),
+		msgDetail:      make(map[string]map[string]*Msg),
+		msgUniq:        make(map[string]map[string]int64),
 		maxBytes:       DefaultMaxBytes,
 	}
 	if opts != nil {
