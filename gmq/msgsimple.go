@@ -15,7 +15,7 @@ type Msg struct {
 	Created int64 `json:"created"`
 
 	// expired timestamp in Unix milliseconds
-	Expiredat int64 `json:"expiredat"`
+	Expireat int64 `json:"expireat"`
 
 	Err   string `json:"err"`
 	State string `json:"state"`

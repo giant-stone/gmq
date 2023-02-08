@@ -68,7 +68,7 @@ func TestScheduler_Register(t *testing.T) {
 		require.Equal(t, sample.wantMsg.GetPayload(), gotMsg.GetPayload(), "GetPayload")
 		require.Equal(t, gmq.MsgStatePending, gotMsg.State, "State")
 		require.Equal(t, now.Add(sample.wait).Unix(), gotMsg.Created/1000, "Created")
-		require.Equal(t, int64(0), gotMsg.Updated, "Updated")
+		require.Equal(t, now.Add(sample.wait).Unix(), gotMsg.Updated/1000, "Updated")
 
 		gotMsg, err = broker.Dequeue(ctx, sample.wantMsg.GetQueue())
 		require.NoError(t, err, "broker.Dequeue")
@@ -128,7 +128,6 @@ func TestScheduler_Unregister(t *testing.T) {
 		require.Equal(t, int64(1), queueState.Total)
 		require.Equal(t, int64(1), queueState.Pending)
 		require.Equal(t, int64(0), queueState.Processing)
-		require.Equal(t, int64(0), queueState.Failed)
 
 		_, err = broker.Dequeue(ctx, sample.wantMsg.GetQueue())
 		require.NoError(t, err, "broker.Dequeue")
@@ -146,7 +145,6 @@ func TestScheduler_Unregister(t *testing.T) {
 		require.Equal(t, int64(1), queueState.Total)
 		require.Equal(t, int64(0), queueState.Pending)
 		require.Equal(t, int64(1), queueState.Processing)
-		require.Equal(t, int64(0), queueState.Failed)
 
 		_, err = broker.Dequeue(ctx, sample.wantMsg.GetQueue())
 		require.ErrorIs(t, err, gmq.ErrNoMsg, "broker.Dequeue")

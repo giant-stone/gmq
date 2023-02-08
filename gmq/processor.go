@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"golang.org/x/time/rate"
 )
 
@@ -104,7 +105,7 @@ func (it *Processor) exec() {
 					}
 				case err != nil:
 					{
-						if it.errLogLimiter.Allow() {
+						if it.errLogLimiter.Allow() && err != context.Canceled && err != redis.ErrClosed {
 							it.logger.Errorf("queue=%s broker.Dequeue %v", it.queueName, err)
 						}
 						<-it.sema
@@ -131,7 +132,6 @@ func (it *Processor) exec() {
 
 				if err != context.DeadlineExceeded {
 					if it.workerWorkIntervalFunc != nil && remain > 0 {
-						// TODO: we should move this msg into waiting queue before it taken by next ProcessMsg call?
 						time.Sleep(time.Millisecond * time.Duration(remain))
 					}
 				}
@@ -144,15 +144,15 @@ func (it *Processor) exec() {
 
 func (it *Processor) handleFailedMsg(msg IMsg, errFail error) {
 	err := it.broker.Fail(it.ctx, msg, errFail)
-	if errFail != err && it.errLogLimiter.Allow() {
-		it.logger.Errorf("queue:%s op:broker.Fail error(%v)", it.queueName, err)
+	if err != nil && it.errLogLimiter.Allow() {
+		it.logger.Errorf("broker.Fail %v, queue=%s msgId=%s", err, it.queueName, msg.GetId())
 	}
 }
 
 func (it *Processor) handleSuccessMsg(msg IMsg) {
 	err := it.broker.Complete(it.ctx, msg)
 	if err != nil && it.errLogLimiter.Allow() {
-		it.logger.Errorf("queue:%s op:broker.Complete error(%v)", it.queueName, err)
+		it.logger.Errorf("broker.Complete %v, queue=%s msgId=%s", err, it.queueName, msg.GetId())
 	}
 }
 
