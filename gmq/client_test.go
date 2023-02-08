@@ -9,19 +9,19 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/giant-stone/gmq/gmq"
+	"github.com/giant-stone/go/grand"
 )
 
-func TestClient_Enqueue(t *testing.T) {
-	broker := setupBrokerRedis(t)
+func testClient_Enqueue(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
 	defer broker.Close()
 
 	cli, err := gmq.NewClientFromBroker(broker)
 	require.NoError(t, err, "gmq.NewClientFromBroker")
 
 	now := time.Now()
-	nowNano := now.UnixNano()
-	msgId := fmt.Sprintf("%d", nowNano)
-	queueName := "q" + msgId
+	msgId := fmt.Sprintf("%s.%d", grand.String(10), now.UnixNano())
+	queueName := grand.String(10)
 	payload := []byte(`{"hello":"world"}`)
 	msgWant := &gmq.Msg{
 		Payload: payload,
@@ -38,7 +38,7 @@ func TestClient_Enqueue(t *testing.T) {
 	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, gmq.MsgStatePending, msgGot.State, "msg.State")
 	require.Equal(t, now.UnixMilli()/1000, msgGot.Created/1000, "msg.Created")
-	require.Equal(t, int64(0), msgGot.Updated, "msg.Processedat")
+	require.Equal(t, now.UnixMilli()/1000, msgGot.Updated/1000, "msg.Updated")
 
 	// validate message via broker lower API
 	msgGot, err = broker.GetMsg(context.Background(), queueName, msgId)
@@ -49,11 +49,11 @@ func TestClient_Enqueue(t *testing.T) {
 	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, gmq.MsgStatePending, msgGot.State, "msg.State")
 	require.Equal(t, now.UnixMilli()/1000, msgGot.Created/1000, "msg.Created")
-	require.Equal(t, int64(0), msgGot.Updated, "msg.Processedat")
+	require.Equal(t, now.UnixMilli()/1000, msgGot.Updated/1000, "msg.Updated")
 }
 
-func TestClient_Dequeue(t *testing.T) {
-	broker := setupBrokerRedis(t)
+func testClient_Dequeue(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
 	defer broker.Close()
 
 	cli, err := gmq.NewClientFromBroker(broker)
@@ -61,9 +61,9 @@ func TestClient_Dequeue(t *testing.T) {
 
 	now := time.Now()
 	nowMilli := now.UnixMilli()
-	msgId := fmt.Sprintf("%d", nowMilli)
+	msgId := fmt.Sprintf("%s.%d", grand.String(10), now.UnixNano())
 	payload := []byte(`{"hello":"world"}`)
-	queueName := "myq"
+	queueName := grand.String(10)
 	msgWant := &gmq.Msg{
 		Payload: payload,
 		Id:      msgId,
@@ -81,31 +81,34 @@ func TestClient_Dequeue(t *testing.T) {
 	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, gmq.MsgStateProcessing, msgGot.State, "msg.State")
 	require.Equal(t, nowMilli/1000, msgGot.Created/1000, "msg.Created")
-	require.LessOrEqual(t, nowMilli, msgGot.Updated, "msg.Processedat")
+	require.LessOrEqual(t, nowMilli, msgGot.Updated, "msg.Updated")
 }
 
-func TestClient_EnqueueDuplicatedMsg(t *testing.T) {
-	broker := setupBrokerRedis(t)
+func testClient_EnqueueDuplicatedMsg(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
 	defer broker.Close()
 
 	cli, err := gmq.NewClientFromBroker(broker)
 	require.NoError(t, err, "gmq.NewClientFromBroker")
 
-	now := time.Now().UnixNano()
-	msgId := fmt.Sprintf("%d", now)
+	now := time.Now()
+	msgId := fmt.Sprintf("%s.%d", grand.String(10), now.UnixNano())
+	payload := []byte(`{"hello":"world"}`)
+	queueName := grand.String(10)
 	msgWant := &gmq.Msg{
-		Payload: []byte(`{"hello":"world"}`),
+		Payload: payload,
 		Id:      msgId,
+		Queue:   queueName,
 	}
 
-	rsEnqueue, err := cli.Enqueue(context.Background(), msgWant)
+	_, err = cli.Enqueue(context.Background(), msgWant)
 	require.NoError(t, err, "Enqueue")
 
 	_, err = cli.Enqueue(context.Background(), msgWant)
 	require.ErrorIs(t, err, gmq.ErrMsgIdConflict, "ErrMsgIdConflict")
 
 	// it could not remove msgId unique constraint via broker.Dequeue
-	_, err = broker.Dequeue(context.Background(), rsEnqueue.GetQueue())
+	_, err = broker.Dequeue(context.Background(), queueName)
 	require.NoError(t, err, "Dequeue")
 
 	_, err = cli.Enqueue(context.Background(), msgWant)
@@ -115,28 +118,29 @@ func TestClient_EnqueueDuplicatedMsg(t *testing.T) {
 	require.ErrorIs(t, err, gmq.ErrMsgIdConflict, "ErrMsgIdConflict")
 
 	// remove msgId unique constraint via broker.DeleteMsg
-	err = broker.DeleteMsg(context.Background(), rsEnqueue.GetQueue(), msgId)
+	err = broker.DeleteMsg(context.Background(), queueName, msgId)
 	require.NoError(t, err, "Delete")
 
 	_, err = cli.Enqueue(context.Background(), msgWant)
 	require.NoError(t, err, "Enqueue")
 }
 
-func TestClient_EnqueueOptQueueName(t *testing.T) {
-	broker := setupBrokerRedis(t)
+func testClient_EnqueueOptQueueName(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
 	defer broker.Close()
 
 	cli, err := gmq.NewClientFromBroker(broker)
 	require.NoError(t, err, "gmq.NewClientFromBroker")
 
-	now := time.Now().UnixNano()
-	msgId := fmt.Sprintf("%d", now)
-	payload := []byte(`123`)
+	now := time.Now()
+	msgId := fmt.Sprintf("%s.%d", grand.String(10), now.UnixNano())
+	payload := []byte(`{"hello":"world"}`)
+	queueName := grand.String(10)
 	msgWant := &gmq.Msg{
 		Payload: payload,
 		Id:      msgId,
+		Queue:   queueName,
 	}
-	queueName := "myuniq" + msgId
 
 	// validate message via function return
 	msgGot, err := cli.Enqueue(context.Background(), msgWant, gmq.OptQueueName(queueName))
@@ -154,8 +158,8 @@ func TestClient_EnqueueOptQueueName(t *testing.T) {
 	require.Equal(t, msgWant.GetId(), msgGot.GetId(), "GetId")
 }
 
-func TestClient_EnqueueOptUniqueIn(t *testing.T) {
-	broker := setupBrokerRedis(t)
+func testClient_EnqueueOptUniqueIn(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
 	defer broker.Close()
 
 	now := time.Now()
@@ -166,11 +170,13 @@ func TestClient_EnqueueOptUniqueIn(t *testing.T) {
 	cli, err := gmq.NewClientFromBroker(broker)
 	require.NoError(t, err, "gmq.NewClientFromBroker")
 
-	nowNano := now.UnixNano()
-	msgId := fmt.Sprintf("%d", nowNano)
+	msgId := fmt.Sprintf("%s.%d", grand.String(10), now.UnixNano())
+	payload := []byte(`{"hello":"world"}`)
+	queueName := grand.String(10)
 	msgWant := &gmq.Msg{
-		Payload: []byte(`123`),
+		Payload: payload,
 		Id:      msgId,
+		Queue:   queueName,
 	}
 
 	uniqIn := time.Second * time.Duration(1)

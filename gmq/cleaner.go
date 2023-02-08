@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/giant-stone/go/ghuman"
 	"golang.org/x/time/rate"
 )
 
@@ -31,7 +32,7 @@ func NewCleaner(params CleanerParams) *Cleaner {
 	return &Cleaner{
 		broker:        params.Broker,
 		ctx:           params.Ctx,
-		errLogLimiter: rate.NewLimiter(rate.Every(2*time.Second), 1),
+		errLogLimiter: rate.NewLimiter(rate.Every(1*time.Second), 1),
 		logger:        params.Logger,
 		msgMaxTTL:     params.MsgMaxTTL,
 		queueNames:    params.QueueNames,
@@ -39,8 +40,10 @@ func NewCleaner(params CleanerParams) *Cleaner {
 }
 
 func (it *Cleaner) start() {
+	it.exec()
+
 	go func() {
-		t := time.NewTicker(it.msgMaxTTL)
+		t := time.NewTicker(it.msgMaxTTL / 2)
 
 		for {
 			select {
@@ -51,15 +54,25 @@ func (it *Cleaner) start() {
 				}
 			case <-t.C:
 				{
-					//TBD 是否要对超过一定时间的统计数据进行清理？
-					for queueName := range it.queueNames {
-						err := it.broker.DeleteAgo(it.ctx, queueName, it.msgMaxTTL)
-						if err != nil && it.errLogLimiter.Allow() {
-							it.logger.Errorf("DeleteAgo %v, queue=%s msgMaxTTL=%d", err, queueName, it.msgMaxTTL)
-						}
-					}
+					it.exec()
 				}
 			}
 		}
 	}()
+}
+
+func (it *Cleaner) exec() {
+	for queueName := range it.queueNames {
+		t := time.Now()
+		err := it.broker.DeleteAgo(it.ctx, queueName, it.msgMaxTTL)
+		elapsed := time.Since(t)
+
+		if it.errLogLimiter.Allow() {
+			if err != nil && err != context.Canceled {
+				it.logger.Errorf("DeleteAgo %v, queue=%s msgMaxTTL=%s elapsed=%s", err, queueName, ghuman.FmtDuration(it.msgMaxTTL), ghuman.FmtDuration(elapsed))
+			} else {
+				it.logger.Debugf("DeleteAgo succ queue=%s msgMaxTTL=%s elapsed=%s", queueName, ghuman.FmtDuration(it.msgMaxTTL), ghuman.FmtDuration(elapsed))
+			}
+		}
+	}
 }
