@@ -765,14 +765,6 @@ func (it *BrokerRedis) ListMsg(ctx context.Context, queueName, state string, lim
 	return values, nil
 }
 
-type QueueStat struct {
-	Name       string
-	Total      int64 // all state of message store in Redis
-	Pending    int64 // wait to free worker consume it
-	Processing int64 // worker already took and consuming
-	Failed     int64 // occured error, and/or pending to retry
-}
-
 func (it *BrokerRedis) listQueues(ctx context.Context) (rs []string, err error) {
 	reply, err := it.cli.Do(ctx, "smembers", NewKeyQueueList()).Slice()
 	if err != nil {
@@ -812,13 +804,6 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 		})
 	}
 	return
-}
-
-type QueueDailyStat struct {
-	Date      string // YYYY-MM-DD in UTC
-	Completed int64
-	Failed    int64
-	Total     int64 // it is equal to Completed + Failed
 }
 
 func (it *BrokerRedis) GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, error) {
@@ -989,5 +974,5 @@ func NewClientRedis(dsn string) (rs *Client, err error) {
 		return
 	}
 
-	return &Client{broker: broker}, nil
+	return &Client{Broker: broker}, nil
 }
