@@ -33,7 +33,7 @@ type BrokerInMemory struct {
 	listStat map[string]*list.List // key is <queueName>, list.Element value is *QueueDailyStat
 
 	msgDetail map[string]map[string]*Msg  // key is <queueName>, value is <msgId> => <msg>
-	msgUniq   map[string]map[string]int64 // key is <queueName>, value is <msgId> => <expireat>
+	msgUniq   map[string]map[string]int64 // key is <queueName>, value is <msgId> => <expireAt>
 
 	maxBytes int64
 
@@ -312,6 +312,9 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	if uniqExpireAt, ok := it.msgUniq[queueName][msgId]; ok {
 		if uniqExpireAt > nowInMs {
 			return nil, ErrMsgIdConflict
+		} else {
+			delete(it.msgUniq[queueName], msgId)
+			delete(it.msgDetail[queueName], msgId)
 		}
 	}
 
@@ -323,12 +326,6 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	}
 
 	it.msgUniq[queueName][msgId] = expireAt
-
-	if msg, ok := it.msgDetail[queueName][msgId]; ok {
-		if msg.State == MsgStatePending || msg.State == MsgStateProcessing {
-			return nil, ErrMsgIdConflict
-		}
-	}
 
 	l := it.listPending[queueName]
 	l.PushBack(msgId)
