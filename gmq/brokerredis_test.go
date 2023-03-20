@@ -181,82 +181,82 @@ func TestBrokerRedis_PauseAndResume(t *testing.T) {
 
 func TestBrokerRedis_Enqueue(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_Enqueue(t, broker)
+	gmq.TestBroker_Enqueue(t, broker)
 }
 
 func TestBrokerRedis_GetMsg(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_GetMsg(t, broker)
+	gmq.TestBroker_GetMsg(t, broker)
 }
 
 func TestBrokerRedis_Dequeue(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_Dequeue(t, broker)
+	gmq.TestBroker_Dequeue(t, broker)
 }
 
 func TestBrokerRedis_DeleteMsg(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_DeleteMsg(t, broker)
+	gmq.TestBroker_DeleteMsg(t, broker)
 }
 
 func TestBrokerRedis_DeleteQueue(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_DeleteQueue(t, broker)
+	gmq.TestBroker_DeleteQueue(t, broker)
 }
 
 func TestBrokerRedis_DeleteAgo(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_DeleteAgo(t, broker)
+	gmq.TestBroker_DeleteAgo(t, broker)
 }
 
 func TestBrokerRedis_Complete(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_Complete(t, broker)
+	gmq.TestBroker_Complete(t, broker)
 }
 
 func TestBrokerRedis_Fail(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_Fail(t, broker)
+	gmq.TestBroker_Fail(t, broker)
 }
 
 func TestBrokerRedis_ListMsg(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_ListMsg(t, broker)
+	gmq.TestBroker_ListMsg(t, broker)
 }
 
 func TestBrokerRedis_ListFailed(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_ListFailed(t, broker)
+	gmq.TestBroker_ListFailed(t, broker)
 }
 
 func TestBrokerRedis_ListFailedMaxItems(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_ListFailedMaxItems(t, broker)
+	gmq.TestBroker_ListFailedMaxItems(t, broker)
 }
 
 func TestBrokerRedis_GetStats(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_GetStats(t, broker)
+	gmq.TestBroker_GetStats(t, broker)
 }
 
 func TestBrokerRedis_GetStatsByDate(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_GetStatsByDate(t, broker)
+	gmq.TestBroker_GetStatsByDate(t, broker)
 }
 
 func TestBrokerRedis_AutoDeduplicateMsgByDefault(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_AutoDeduplicateMsgByDefault(t, broker)
+	gmq.TestBroker_AutoDeduplicateMsgByDefault(t, broker)
 }
 
 func TestBrokerRedis_AutoDeduplicateFailedMsg(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_AutoDeduplicateFailedMsg(t, broker)
+	gmq.TestBroker_AutoDeduplicateFailedMsg(t, broker)
 }
 
 func TestBrokerRedis_AutoDeduplicateCompletedMsg(t *testing.T) {
 	broker := getTestBrokerRedis(t)
-	testBroker_AutoDeduplicateCompletedMsg(t, broker)
+	gmq.TestBroker_AutoDeduplicateCompletedMsg(t, broker)
 }
 
 func TestBrokerRedis_ClientEnqueue(t *testing.T) {
