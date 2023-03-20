@@ -48,14 +48,29 @@ type Broker interface {
 	Ping(ctx context.Context) error
 	GetStatsByDate(ctx context.Context, YYYYMMDD string) (*QueueDailyStat, error)
 	GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, error)
-	Pause(ctx context.Context, Queuename string) error
-	Resume(ctx context.Context, Queuename string) error
+	Pause(ctx context.Context, queueName string) error
+	Resume(ctx context.Context, queueName string) error
 
 	// SetClock custom internal clock for testing
 	SetClock(c Clock)
 
 	// processing time in UTC instead of local
 	UTC(flag bool)
+}
+
+type QueueStat struct {
+	Name       string `json:"name"`       // queue name
+	Total      int64  `json:"total"`      // all state of message store in Redis
+	Pending    int64  `json:"pending"`    // wait to free worker consume it
+	Processing int64  `json:"processing"` // worker already took and consuming
+	Failed     int64  `json:"failed"`     // occured error, and/or pending to retry
+}
+
+type QueueDailyStat struct {
+	Date      string `json:"date" gorm:"primarykey"` // YYYY-MM-DD in UTC
+	Completed int64  `json:"completed"`
+	Failed    int64  `json:"failed"`
+	Total     int64  `json:"total"` // it is equal to Completed + Failed
 }
 
 // BrokerUnimplemented must be embedded to have forward compatible implementations.
@@ -132,7 +147,7 @@ func (*BrokerUnimplemented) ListMsg(ctx context.Context, queueName string, state
 }
 
 // Pause implements Broker
-func (*BrokerUnimplemented) Pause(ctx context.Context, Queuename string) error {
+func (*BrokerUnimplemented) Pause(ctx context.Context, queueName string) error {
 	return ErrNotImplemented
 }
 
@@ -142,7 +157,7 @@ func (*BrokerUnimplemented) Ping(ctx context.Context) error {
 }
 
 // Resume implements Broker
-func (*BrokerUnimplemented) Resume(ctx context.Context, Queuename string) error {
+func (*BrokerUnimplemented) Resume(ctx context.Context, queueName string) error {
 	return ErrNotImplemented
 }
 
