@@ -188,7 +188,11 @@ func (it *BrokerRedis) updateQueueList(ctx context.Context, queueName string) (e
 // Returns 0 if successfully enqueued
 // Returns 1 if message ID already exists
 var scriptEnqueueUnique = redis.NewScript(`
-if ARGV[7] == false and redis.call("EXISTS", KEYS[1]) == 1 then
+--
+-- NOTICE: everything pass them via args data type is **string**,
+-- boolean will transform from true to "1", false to "0".
+--
+if ARGV[7] == "0" and redis.call("EXISTS", KEYS[1]) == 1 then
 	return 1
 end
 redis.call("PSETEX", KEYS[1], ARGV[1], ARGV[6])
@@ -271,6 +275,9 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 		nowInMs,
 		expireAt,
 		msgId,
+
+		// NOTICE: everything pass them via args data type is **string**,
+		// boolean will transform from true to "1", false to "0".
 		ignoreUnique,
 	}
 	resI, err = scriptEnqueueUnique.Run(ctx, it.cli, keys, args...).Result()
