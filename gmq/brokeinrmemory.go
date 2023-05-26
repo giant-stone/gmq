@@ -281,6 +281,7 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	queueName := msg.GetQueue()
 
 	var uniqueInMs int64
+	var ignoreUnique bool
 	for _, opt := range opts {
 		switch opt.Type() {
 		case OptTypeQueueName:
@@ -297,6 +298,10 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 					uniqueInMs = value
 				}
 			}
+		case OptTypeIgnoreUnique:
+			{
+				ignoreUnique = opt.Value().(bool)
+			}
 		}
 	}
 
@@ -310,7 +315,7 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	nowInMs := now.UnixMilli()
 
 	if uniqExpireAt, ok := it.msgUniq[queueName][msgId]; ok {
-		if uniqExpireAt > nowInMs {
+		if !ignoreUnique && uniqExpireAt > nowInMs {
 			return nil, ErrMsgIdConflict
 		} else {
 			delete(it.msgUniq[queueName], msgId)

@@ -141,3 +141,8 @@ func TestBrokerInMemory_ClientEnqueueOptUniqueIn(t *testing.T) {
 	broker := getTestBrokerInMemory(t)
 	testClient_EnqueueOptUniqueIn(t, broker)
 }
+
+func TestBrokerInMemory_ClientEnqueueOptTypeIgnoreUnique(t *testing.T) {
+	broker := getTestBrokerInMemory(t)
+	testClient_EnqueueOptTypeIgnoreUnique(t, broker)
+}
