@@ -185,33 +185,33 @@ func (mr *MockBrokerMockRecorder) GetStats(ctx interface{}) *gomock.Call {
 }
 
 // GetStatsByDate mocks base method.
-func (m *MockBroker) GetStatsByDate(ctx context.Context, YYYYMMDD string) (*QueueDailyStat, error) {
+func (m *MockBroker) GetStatsByDate(ctx context.Context, listQueueNames []string, YYYYMMDD string) (*QueueDailyStat, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetStatsByDate", ctx, YYYYMMDD)
+	ret := m.ctrl.Call(m, "GetStatsByDate", ctx, listQueueNames, YYYYMMDD)
 	ret0, _ := ret[0].(*QueueDailyStat)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetStatsByDate indicates an expected call of GetStatsByDate.
-func (mr *MockBrokerMockRecorder) GetStatsByDate(ctx, YYYYMMDD interface{}) *gomock.Call {
+func (mr *MockBrokerMockRecorder) GetStatsByDate(ctx, listQueueNames, YYYYMMDD interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatsByDate", reflect.TypeOf((*MockBroker)(nil).GetStatsByDate), ctx, YYYYMMDD)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatsByDate", reflect.TypeOf((*MockBroker)(nil).GetStatsByDate), ctx, listQueueNames, YYYYMMDD)
 }
 
 // GetStatsWeekly mocks base method.
-func (m *MockBroker) GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, error) {
+func (m *MockBroker) GetStatsWeekly(ctx context.Context, listQueueNames []string) ([]*QueueDailyStat, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetStatsWeekly", ctx)
+	ret := m.ctrl.Call(m, "GetStatsWeekly", ctx, listQueueNames)
 	ret0, _ := ret[0].([]*QueueDailyStat)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetStatsWeekly indicates an expected call of GetStatsWeekly.
-func (mr *MockBrokerMockRecorder) GetStatsWeekly(ctx interface{}) *gomock.Call {
+func (mr *MockBrokerMockRecorder) GetStatsWeekly(ctx, listQueueNames interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatsWeekly", reflect.TypeOf((*MockBroker)(nil).GetStatsWeekly), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatsWeekly", reflect.TypeOf((*MockBroker)(nil).GetStatsWeekly), ctx, listQueueNames)
 }
 
 // Init mocks base method.

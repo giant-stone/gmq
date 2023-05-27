@@ -251,6 +251,7 @@ func printStats(ctx context.Context, broker gmq.Broker) {
 	if len(queues) == 0 {
 		fmt.Println("Related info not found. Do consumer(s) have not start yet?")
 	} else {
+		listQueueNames := make([]string, 0)
 		for _, rsStat := range queues {
 			fmt.Printf("queue=%s total=%d pending=%d processing=%d failed=%d \n",
 				rsStat.Name,
@@ -259,13 +260,14 @@ func printStats(ctx context.Context, broker gmq.Broker) {
 				rsStat.Processing,
 				rsStat.Failed,
 			)
+			listQueueNames = append(listQueueNames, rsStat.Name)
 		}
-		printStatsWeekly(ctx, broker)
+		printStatsWeekly(ctx, broker, listQueueNames)
 	}
 }
 
-func printStatsWeekly(ctx context.Context, broker gmq.Broker) {
-	rsStat, err := broker.GetStatsWeekly(ctx)
+func printStatsWeekly(ctx context.Context, broker gmq.Broker, listQueueNames []string) {
+	rsStat, err := broker.GetStatsWeekly(ctx, listQueueNames)
 	gutil.ExitOnErr(err)
 
 	now := time.Now()

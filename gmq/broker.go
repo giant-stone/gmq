@@ -46,8 +46,8 @@ type Broker interface {
 	Init(ctx context.Context, queueName string) error
 
 	Ping(ctx context.Context) error
-	GetStatsByDate(ctx context.Context, YYYYMMDD string) (*QueueDailyStat, error)
-	GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, error)
+	GetStatsByDate(ctx context.Context, listQueueNames []string, YYYYMMDD string) (*QueueDailyStat, error)
+	GetStatsWeekly(ctx context.Context, listQueueNames []string) ([]*QueueDailyStat, error)
 	Pause(ctx context.Context, queueName string) error
 	Resume(ctx context.Context, queueName string) error
 

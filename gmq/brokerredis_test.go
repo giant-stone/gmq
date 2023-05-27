@@ -137,9 +137,11 @@ func TestBrokerRedis_PauseAndResume(t *testing.T) {
 	// wait for msgs under processing complete
 	time.Sleep(restIfNoMsg * 2)
 
+	listQueueNames, _ := broker.ListQueue(ctx)
+
 	// records the Completed and failed msg numbers
 	todayYYYYMMDD := time.Now().Format("2006-01-02")
-	dailyStats, err := broker.GetStatsByDate(ctx, todayYYYYMMDD)
+	dailyStats, err := broker.GetStatsByDate(ctx, listQueueNames, todayYYYYMMDD)
 	require.NoError(t, err)
 	CompletedBeforePause := dailyStats.Completed
 	FailedBeforePause := dailyStats.Failed
@@ -150,7 +152,7 @@ func TestBrokerRedis_PauseAndResume(t *testing.T) {
 
 	// check if there is any msg Completed
 	time.Sleep(restIfNoMsg * 2)
-	dailyStats, err = broker.GetStatsByDate(ctx, todayYYYYMMDD)
+	dailyStats, err = broker.GetStatsByDate(ctx, listQueueNames, todayYYYYMMDD)
 	require.NoError(t, err)
 	CompletedAfterPause := dailyStats.Completed
 	FailedAfterPause := dailyStats.Failed
@@ -168,7 +170,7 @@ func TestBrokerRedis_PauseAndResume(t *testing.T) {
 
 	// check if the worker resumes to comsume
 	time.Sleep(restIfNoMsg * 2)
-	dailyStats, err = broker.GetStatsByDate(ctx, todayYYYYMMDD)
+	dailyStats, err = broker.GetStatsByDate(ctx, listQueueNames, todayYYYYMMDD)
 	require.NoError(t, err)
 	CompletedAfterResume := dailyStats.Completed
 	FailedAfterResume := dailyStats.Failed

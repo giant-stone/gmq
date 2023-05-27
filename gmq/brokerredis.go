@@ -819,7 +819,7 @@ func (it *BrokerRedis) GetStats(ctx context.Context) (rs []*QueueStat, err error
 	return
 }
 
-func (it *BrokerRedis) GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, error) {
+func (it *BrokerRedis) GetStatsWeekly(ctx context.Context, listQueueNames []string) ([]*QueueDailyStat, error) {
 	now := it.clock.Now()
 	if it.utc {
 		now = now.UTC()
@@ -830,7 +830,7 @@ func (it *BrokerRedis) GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, e
 	rs := make([]*QueueDailyStat, 0)
 	date := now.AddDate(0, 0, -7)
 	for i := 0; i <= 7; i++ {
-		rsOneDay, err := it.GetStatsByDate(ctx, date.Format("2006-01-02"))
+		rsOneDay, err := it.GetStatsByDate(ctx, listQueueNames, date.Format("2006-01-02"))
 		if err != nil {
 			return nil, ErrInternal
 		}
@@ -840,30 +840,30 @@ func (it *BrokerRedis) GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, e
 	return rs, nil
 }
 
-func (it *BrokerRedis) GetStatsByDate(ctx context.Context, date string) (rs *QueueDailyStat, err error) {
-	queueNames, err := it.listQueues(ctx)
-	if err != nil {
-		return
-	}
-
+func (it *BrokerRedis) GetStatsByDate(ctx context.Context, listQueueNames []string, date string) (rs *QueueDailyStat, err error) {
 	rs = &QueueDailyStat{Date: date}
-	for _, queueName := range queueNames {
-		completed, _ := it.cli.Get(ctx, NewKeyDailyStatCompleted(it.namespace, queueName, date)).Result()
-		failed, _ := it.cli.Get(ctx, NewKeyDailyStatFailed(it.namespace, queueName, date)).Result()
+	for _, queueName := range listQueueNames {
+		listReply, err := it.cli.MGet(ctx,
+			NewKeyDailyStatCompleted(it.namespace, queueName, date),
+			NewKeyDailyStatFailed(it.namespace, queueName, date),
+		).Result()
 
-		if completed != "" {
-			value := gstr.Atoi64(completed)
-			if value > 0 {
-				rs.Completed += value
-			}
+		if err != nil {
+			return nil, err
 		}
 
-		if failed != "" {
-			value := gstr.Atoi64(failed)
-			if value > 0 {
-				rs.Failed += value
-			}
+		completedI, failedI := listReply[0], listReply[1]
+		var completed, failed int64
+		if completedI != nil {
+			completed = gstr.Atoi64(completedI.(string))
 		}
+
+		if failedI != nil {
+			failed = gstr.Atoi64(failedI.(string))
+		}
+
+		rs.Completed += completed
+		rs.Failed += failed
 
 		rs.Total = rs.Completed + rs.Failed
 	}
