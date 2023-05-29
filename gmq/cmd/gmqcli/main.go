@@ -57,9 +57,14 @@ var (
 	}
 )
 
-var buildts = ""
-var builddsn = ""
-var cmdShowVer bool
+var (
+	buildTs     = ""
+	showBuildTs bool
+)
+
+var (
+	buildDsn = ""
+)
 
 const (
 	DefaultDSN = "redis://127.0.0.1:6379/0"
@@ -99,7 +104,7 @@ func main() {
 
 	flag.BoolVar(&useUTC, "u", false, "process time in UTC instead of local")
 
-	flag.BoolVar(&cmdShowVer, "v", false, "show build timestamp")
+	flag.BoolVar(&showBuildTs, "v", false, "show build timestamp")
 
 	flag.Parse()
 	flag.Usage = mdbcliUsage
@@ -111,18 +116,18 @@ func main() {
 		!cmdAddMsg && !cmdGetMsg && !cmdListMsg && !cmdListFailed && !cmdDelMsg &&
 		!cmdDelQueue && !cmdListQueue && !cmdCleanQueue &&
 		cmdPauseq != "" && cmdResumeq != "" &&
-		!cmdShowVer {
+		!showBuildTs {
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	if cmdShowVer {
-		fmt.Println("built at ", buildts)
+	if showBuildTs {
+		fmt.Println(buildTs)
 		os.Exit(0)
 	}
 
 	if dsnRedis == "" {
-		dsnRedis = builddsn
+		dsnRedis = buildDsn
 	}
 	if dsnRedis == "" {
 		dsnRedis = DefaultDSN

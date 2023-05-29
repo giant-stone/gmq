@@ -1,12 +1,25 @@
-GOOS=linux
-GOARCH=amd64
-BUILD_OPTS=-trimpath -tags timetzdata
-LDFLAGS="-X main.buildts=`date -u +%y%m%d_%H%m%S_%Z`"
+GOOS?=linux
+GOARCH?=amd64
+CGO_ENABLED?=0
 
-all: genMock buildBin
+BUILD_OPTS=-ldflags="-s -w" -trimpath -tags timetzdata
+LDFLAGS="-X main.buildTs=`date -u +%y%m%d_%H%m%S_%Z`"
+
+export GOOS
+export GOARCH
+export CGO_ENABLED
+
+all: echoMode genMock buildBin
 
 buildBin:
 	go build $(BUILD_OPTS) -ldflags $(LDFLAGS) -o gmqcli.bin gmq/cmd/gmqcli/main.go
 
 genMock:
 	mockgen -source=gmq/broker.go -destination=gmq/brokermock.go -package=gmq -mock_names Interface=ImplMock
+
+echoMode:
+	@echo GOOS=$(GOOS)
+	@echo GOARCH=$(GOARCH)
+	@echo CGO_ENABLED=$(CGO_ENABLED)
+	@echo MODE=$(MODE)
+	@echo LDFLAGS=$(LDFLAGS)
