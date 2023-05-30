@@ -3,7 +3,7 @@ module github.com/giant-stone/gmq
 go 1.17
 
 require (
-	github.com/giant-stone/go v0.0.13
+	github.com/giant-stone/go v0.0.15
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.3.0
