@@ -281,6 +281,7 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	queueName := msg.GetQueue()
 
 	var uniqueInMs int64
+	var ignoreUnique bool
 	for _, opt := range opts {
 		switch opt.Type() {
 		case OptTypeQueueName:
@@ -297,6 +298,10 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 					uniqueInMs = value
 				}
 			}
+		case OptTypeIgnoreUnique:
+			{
+				ignoreUnique = opt.Value().(bool)
+			}
 		}
 	}
 
@@ -310,7 +315,7 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	nowInMs := now.UnixMilli()
 
 	if uniqExpireAt, ok := it.msgUniq[queueName][msgId]; ok {
-		if uniqExpireAt > nowInMs {
+		if !ignoreUnique && uniqExpireAt > nowInMs {
 			return nil, ErrMsgIdConflict
 		} else {
 			delete(it.msgUniq[queueName], msgId)
@@ -522,7 +527,7 @@ func (it *BrokerInMemory) listQueues() (rs []string) {
 }
 
 // GetStatsByDate implements Broker
-func (it *BrokerInMemory) GetStatsByDate(ctx context.Context, YYYYMMDD string) (*QueueDailyStat, error) {
+func (it *BrokerInMemory) GetStatsByDate(ctx context.Context, listQueueNames []string, YYYYMMDD string) (*QueueDailyStat, error) {
 	it.lock.RLock()
 	defer it.lock.RUnlock()
 
@@ -553,11 +558,11 @@ func (it *BrokerInMemory) GetStatsByDate(ctx context.Context, YYYYMMDD string) (
 }
 
 // GetStatsWeekly implements Broker
-func (it *BrokerInMemory) GetStatsWeekly(ctx context.Context) ([]*QueueDailyStat, error) {
+func (it *BrokerInMemory) GetStatsWeekly(ctx context.Context, listQueueNames []string) ([]*QueueDailyStat, error) {
 	rs := make([]*QueueDailyStat, 0)
 	date := it.clock.Now().AddDate(0, 0, -7)
 	for i := 0; i <= 7; i++ {
-		rsOneDay, err := it.GetStatsByDate(ctx, gtime.UnixTime2YyyymmddUtc(date.Unix()))
+		rsOneDay, err := it.GetStatsByDate(ctx, listQueueNames, gtime.UnixTime2YyyymmddUtc(date.Unix()))
 		if err != nil {
 			return nil, ErrInternal
 		}
