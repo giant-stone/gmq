@@ -301,8 +301,9 @@ func TestBroker_DeleteAgo(t *testing.T, broker Broker) {
 	require.Equal(t, int64(0), queueStat.Processing)
 	require.Equal(t, int64(1), queueStat.Failed)
 
+	listQueueNames := toListQueueNames(queueStats)
 	todayYYYYMMDD := time.Now().Format("2006-01-02")
-	queueDailyStat, err := broker.GetStatsByDate(ctx, todayYYYYMMDD)
+	queueDailyStat, err := broker.GetStatsByDate(ctx, listQueueNames, todayYYYYMMDD)
 	require.NoError(t, err)
 	require.Equal(t, todayYYYYMMDD, queueDailyStat.Date)
 	require.Equal(t, int64(1), queueDailyStat.Total)
@@ -337,12 +338,20 @@ func TestBroker_DeleteAgo(t *testing.T, broker Broker) {
 	require.Equal(t, int64(0), queueStat.Processing)
 	require.Equal(t, int64(0), queueStat.Failed)
 
-	queueDailyStat, err = broker.GetStatsByDate(ctx, todayYYYYMMDD)
+	queueDailyStat, err = broker.GetStatsByDate(ctx, listQueueNames, todayYYYYMMDD)
 	require.NoError(t, err)
 	require.Equal(t, todayYYYYMMDD, queueDailyStat.Date)
 	require.Equal(t, int64(1), queueDailyStat.Total)
 	require.Equal(t, int64(0), queueDailyStat.Completed)
 	require.Equal(t, int64(1), queueDailyStat.Failed)
+}
+
+func toListQueueNames(queueStats []*QueueStat) []string {
+	rs := make([]string, 0)
+	for _, item := range queueStats {
+		rs = append(rs, item.Name)
+	}
+	return rs
 }
 
 func TestBroker_Complete(t *testing.T, broker Broker) {
@@ -391,7 +400,7 @@ func TestBroker_Complete(t *testing.T, broker Broker) {
 	require.Equal(t, int64(0), queueStat.Processing)
 	require.Equal(t, int64(0), queueStat.Failed)
 
-	queueDailyStat, err := broker.GetStatsByDate(ctx, todayYYYYMMDD)
+	queueDailyStat, err := broker.GetStatsByDate(ctx, toListQueueNames(queueStats), todayYYYYMMDD)
 	require.NoError(t, err)
 	require.Equal(t, todayYYYYMMDD, queueDailyStat.Date)
 	require.Equal(t, int64(1), queueDailyStat.Total)
@@ -462,7 +471,7 @@ func TestBroker_Fail(t *testing.T, broker Broker) {
 	require.Equal(t, int64(0), queueStat.Processing)
 	require.Equal(t, int64(1), queueStat.Failed)
 
-	queueDailyStat, err := broker.GetStatsByDate(ctx, todayYYYYMMDD)
+	queueDailyStat, err := broker.GetStatsByDate(ctx, toListQueueNames(queueStats), todayYYYYMMDD)
 	require.NoError(t, err)
 	require.Equal(t, todayYYYYMMDD, queueDailyStat.Date)
 	require.Equal(t, int64(1), queueDailyStat.Total)
@@ -740,8 +749,9 @@ func TestBroker_GetStatsByDate(t *testing.T, broker Broker) {
 	clock.AdvanceTime(restIfNoMsg * 2)
 	time.Sleep(restIfNoMsg * 2)
 
+	listQueueNames, _ := broker.ListQueue(ctx)
 	todayYYYYMMDD := time.Now().Format("2006-01-02")
-	rs, err := broker.GetStatsByDate(ctx, todayYYYYMMDD)
+	rs, err := broker.GetStatsByDate(ctx, listQueueNames, todayYYYYMMDD)
 	require.NoError(t, err)
 	require.Equal(t, todayYYYYMMDD, rs.Date)
 	require.Equal(t, int64(2), rs.Total)

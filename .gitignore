@@ -12,3 +12,6 @@ ignore/
 *.rdb
 *.dev
 *.pro
+
+*.db
+*.db-journal

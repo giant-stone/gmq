@@ -203,3 +203,50 @@ func testClient_EnqueueOptUniqueIn(t *testing.T, broker gmq.Broker) {
 	_, err = cli.Enqueue(context.Background(), msgWant, gmq.OptUniqueIn(uniqIn))
 	require.ErrorIs(t, err, gmq.ErrMsgIdConflict, "Enqueue with OptUniqueIn")
 }
+
+func testClient_EnqueueOptTypeIgnoreUnique(t *testing.T, broker gmq.Broker) {
+	require.NotNil(t, broker)
+	defer broker.Close()
+
+	cli, err := gmq.NewClientFromBroker(broker)
+	require.NoError(t, err, "gmq.NewClientFromBroker")
+
+	now := time.Now()
+	msgId := fmt.Sprintf("%s.%d", grand.String(10), now.UnixNano())
+	payload := []byte(`{"hello":"world"}`)
+	queueName := grand.String(10)
+	msgWant := &gmq.Msg{
+		Payload: payload,
+		Id:      msgId,
+		Queue:   queueName,
+	}
+
+	_, err = cli.Enqueue(context.Background(), msgWant)
+	require.NoError(t, err, "Enqueue")
+
+	_, err = cli.Enqueue(context.Background(), msgWant, gmq.OptIgnoreUnique(true))
+	require.NoError(t, err, "OptIgnoreUnique")
+
+	_, err = cli.Enqueue(context.Background(), msgWant)
+	require.ErrorIs(t, err, gmq.ErrMsgIdConflict, "ErrMsgIdConflict")
+
+	// it could not remove msgId unique constraint via broker.Dequeue
+	_, err = broker.Dequeue(context.Background(), queueName)
+	require.NoError(t, err, "Dequeue")
+
+	_, err = cli.Enqueue(context.Background(), msgWant)
+	require.ErrorIs(t, err, gmq.ErrMsgIdConflict, "ErrMsgIdConflict")
+
+	_, err = cli.Enqueue(context.Background(), msgWant)
+	require.ErrorIs(t, err, gmq.ErrMsgIdConflict, "ErrMsgIdConflict")
+
+	// remove msgId unique constraint via broker.DeleteMsg
+	err = broker.DeleteMsg(context.Background(), queueName, msgId)
+	require.NoError(t, err, "Delete")
+
+	_, err = cli.Enqueue(context.Background(), msgWant)
+	require.NoError(t, err, "Enqueue")
+
+	_, err = cli.Enqueue(context.Background(), msgWant, gmq.OptIgnoreUnique(true))
+	require.NoError(t, err, "OptIgnoreUnique")
+}
