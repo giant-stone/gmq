@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/giant-stone/go v0.0.13
 	github.com/go-redis/redis/v8 v8.11.5
+	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.3.0
 	github.com/robfig/cron/v3 v3.0.0
 	github.com/stretchr/testify v1.7.0
