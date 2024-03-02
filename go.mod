@@ -1,6 +1,6 @@
 module github.com/giant-stone/gmq
 
-go 1.17
+go 1.21
 
 require (
 	github.com/giant-stone/go v0.0.15
