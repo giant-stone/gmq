@@ -5,10 +5,10 @@ go 1.17
 require (
 	github.com/giant-stone/go v0.0.15
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.3.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/stretchr/testify v1.8.4
+	go.uber.org/mock v0.4.0
 	golang.org/x/net v0.17.0
 	golang.org/x/time v0.3.0
 )
