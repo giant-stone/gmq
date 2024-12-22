@@ -2,6 +2,8 @@ package gmq
 
 const (
 	DefaultNamespace = "gmq"
+
+	DefaultSeparator = ":"
 )
 
 const (
