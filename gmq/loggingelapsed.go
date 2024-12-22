@@ -8,7 +8,7 @@ import (
 	"github.com/giant-stone/go/gstr"
 )
 
-func LoggingElapsed(h Handler) Handler {
+func LoggingElapsed(h IHandler) IHandler {
 	return HandlerFunc(func(ctx context.Context, msg IMsg) error {
 		start := time.Now()
 		err := h.ProcessMsg(ctx, msg)

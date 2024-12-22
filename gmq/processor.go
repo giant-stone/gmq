@@ -16,7 +16,7 @@ type Processor struct {
 	broker Broker
 	// rate limiter to prevent spamming logs with a bunch of errors.
 	errLogLimiter *rate.Limiter
-	handler       Handler
+	handler       IHandler
 	logger        Logger
 	restIfNoMsg   time.Duration
 
@@ -32,7 +32,7 @@ type ProcessorParams struct {
 	Ctx         context.Context
 	Broker      Broker
 	RestIfNoMsg time.Duration
-	Handler     Handler
+	Handler     IHandler
 	Logger      Logger
 	QueueName   string
 
