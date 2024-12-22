@@ -15,7 +15,7 @@ func main() {
 	var dsn string
 	flag.StringVar(&dsn, "d", defaultDsn, "data source name of redis")
 	flag.Parse()
-	broker, err := gmq.NewBrokerRedis(dsn)
+	broker, err := gmq.NewBrokerRedis(dsn, "")
 	gutil.ExitOnErr(err)
 	impl.RunCrawlClient(context.Background(), broker)
 	ctx := context.Background()

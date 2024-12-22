@@ -16,8 +16,8 @@ const (
 	LuaReturnCodeError
 )
 
-func NewKeyQueueList() string {
-	return fmt.Sprintf("%s:%s", Namespace, QueueNameList)
+func NewKeyQueueList(ns string) string {
+	return fmt.Sprintf("%s:%s", ns, QueueNameList)
 }
 
 func NewKeyQueuePending(ns, queueName string) string {
@@ -71,18 +71,22 @@ func NewKeyQueuePattern(ns, queueName string) string {
 	return fmt.Sprintf("%s:%s:*", ns, queueName)
 }
 
-func NewBrokerRedis(dsn string) (rs Broker, err error) {
+func NewBrokerRedis(dsn, ns string) (rs Broker, err error) {
 	opts, err := redis.ParseURL(dsn)
 	if err != nil {
 		return
 	}
 
+	if ns == "" {
+		ns = DefaultNamespace
+	}
+
 	cli, _ := MakeRedisUniversalClient(opts).(redis.UniversalClient)
-	return &BrokerRedis{cli: cli, clock: NewWallClock(), namespace: Namespace}, nil
+	return &BrokerRedis{cli: cli, clock: NewWallClock(), namespace: ns}, nil
 }
 
-func NewBrokerFromRedisClient(cli redis.UniversalClient) (rs Broker, err error) {
-	return &BrokerRedis{cli: cli, clock: NewWallClock(), namespace: Namespace}, nil
+func NewBrokerFromRedisClient(cli redis.UniversalClient, ns string) (rs Broker, err error) {
+	return &BrokerRedis{cli: cli, clock: NewWallClock(), namespace: ns}, nil
 }
 
 func MakeRedisUniversalClient(opts *redis.Options) (rs interface{}) {
@@ -166,7 +170,7 @@ func (it *BrokerRedis) Init(ctx context.Context, queueName string) (err error) {
 }
 
 func (it *BrokerRedis) updateQueueList(ctx context.Context, queueName string) (err error) {
-	_, err = it.cli.SAdd(ctx, NewKeyQueueList(), queueName).Result()
+	_, err = it.cli.SAdd(ctx, NewKeyQueueList(it.namespace), queueName).Result()
 	return
 }
 
@@ -779,7 +783,7 @@ func (it *BrokerRedis) ListMsg(ctx context.Context, queueName, state string, lim
 }
 
 func (it *BrokerRedis) listQueues(ctx context.Context) (rs []string, err error) {
-	reply, err := it.cli.Do(ctx, "smembers", NewKeyQueueList()).Slice()
+	reply, err := it.cli.Do(ctx, "smembers", NewKeyQueueList(it.namespace)).Slice()
 	if err != nil {
 		return
 	}
@@ -981,8 +985,8 @@ func parseMsgFromRedisLuaHgetallResult(pairs interface{}) (msg *Msg, err error) 
 	}, nil
 }
 
-func NewClientRedis(dsn string) (rs *Client, err error) {
-	broker, err := NewBrokerRedis(dsn)
+func NewClientRedis(dsn, ns string) (rs *Client, err error) {
+	broker, err := NewBrokerRedis(dsn, ns)
 	if err != nil {
 		return
 	}
