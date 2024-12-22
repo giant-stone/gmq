@@ -7,8 +7,10 @@ import (
 )
 
 type Msg struct {
+	// Global unique id in MQ, it contains namespace prefix.
+	Id string `json:"id"`
+
 	Payload []byte `json:"payload"`
-	Id      string `json:"id"`
 	Queue   string `json:"queue"`
 
 	// message created at timestamp in Unix milliseconds
@@ -22,6 +24,21 @@ type Msg struct {
 
 	// state last changed timestamp in Unix milliseconds
 	Updated int64 `json:"updated"`
+}
+
+// SetId implements IMsg.
+func (it *Msg) SetId(v string) {
+	it.Id = v
+}
+
+// SetPayload implements IMsg.
+func (it *Msg) SetPayload(v []byte) {
+	it.Payload = v
+}
+
+// SetQueue implements IMsg.
+func (it *Msg) SetQueue(v string) {
+	it.Queue = v
 }
 
 func (it *Msg) GetPayload() []byte {

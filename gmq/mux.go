@@ -19,12 +19,22 @@ func NewMux() *Mux {
 	return &Mux{}
 }
 
+// SetClock implements IHandler.
+func (fn *Mux) SetClock(c Clock) {
+	panic("unimplemented")
+}
+
+// SetIdGenerator implements IHandler.
+func (fn *Mux) SetIdGenerator(v IdGenerator) {
+	panic("unimplemented")
+}
+
 type MuxEntry struct {
-	h       Handler
+	h       IHandler
 	pattern string
 }
 
-type MiddlewareFunc func(Handler) Handler
+type MiddlewareFunc func(IHandler) IHandler
 
 // Use appends a MiddlewareFunc to the chain.
 // Middlewares are executed one by one in the order.
@@ -34,7 +44,7 @@ func (it *Mux) Use(mws ...MiddlewareFunc) {
 	it.mws = append(it.mws, mws...)
 }
 
-func (it *Mux) match(s string) (h Handler, pattern string) {
+func (it *Mux) match(s string) (h IHandler, pattern string) {
 	// Check for exact match first.
 	v, ok := it.m[s]
 	if ok {
@@ -51,7 +61,7 @@ func (it *Mux) match(s string) (h Handler, pattern string) {
 
 }
 
-func (it *Mux) Handler(msg IMsg) (h Handler, pattern string) {
+func (it *Mux) Handler(msg IMsg) (h IHandler, pattern string) {
 	it.mu.RLock()
 	defer it.mu.RUnlock()
 
@@ -67,7 +77,7 @@ func (it *Mux) Handler(msg IMsg) (h Handler, pattern string) {
 
 // Handle registers the handler for the given pattern.
 // If there is duplicated handler then panics.
-func (it *Mux) Handle(pattern string, handler Handler) {
+func (it *Mux) Handle(pattern string, handler IHandler) {
 	it.mu.Lock()
 	defer it.mu.Unlock()
 
@@ -121,6 +131,6 @@ func NotFound(ctx context.Context, msg IMsg) error {
 	return fmt.Errorf("handler matched msg queue=%s not found", msg.GetQueue())
 }
 
-func NotFoundHandler() Handler {
+func NotFoundHandler() IHandler {
 	return HandlerFunc(NotFound)
 }
