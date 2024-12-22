@@ -48,7 +48,7 @@ func setupBrokerRedis(tb testing.TB) (broker gmq.Broker) {
 	err = cli.FlushDB(context.Background()).Err()
 	require.NoError(tb, err, "cli.FlushDB")
 
-	broker, err = gmq.NewBrokerFromRedisClient(cli)
+	broker, err = gmq.NewBrokerFromRedisClient(cli, "")
 	require.NoError(tb, err, "gmq.NewBrokerFromRedisClient")
 
 	err = cli.FlushDB(context.Background()).Err()

@@ -31,8 +31,9 @@ var (
 
 	cmdPrintStats bool
 
-	ago      int64
-	dsnRedis string
+	ago       int64
+	dsnRedis  string
+	namespace string
 
 	msgId      string
 	payloadStr string
@@ -73,6 +74,7 @@ const (
 func main() {
 	flag.StringVar(&loglevel, "l", "debug", "loglevel debug,info,warn,error")
 	flag.StringVar(&dsnRedis, "d", "", "redis DSN")
+	flag.StringVar(&namespace, "ns", "", "namespace, use it as message id prefix")
 
 	// commands
 	flag.BoolVar(&cmdPrintStats, "stat", false, "print queue stats")
@@ -133,7 +135,7 @@ func main() {
 		dsnRedis = DefaultDSN
 	}
 
-	broker, err := gmq.NewBrokerRedis(dsnRedis)
+	broker, err := gmq.NewBrokerRedis(dsnRedis, namespace)
 	broker.UTC(useUTC)
 	gutil.ExitOnErr(err)
 	ctx := context.Background()

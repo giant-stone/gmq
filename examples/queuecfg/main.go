@@ -24,7 +24,7 @@ func main() {
 	// 初始化 glogging 打印日志，[glogging](https://github.com/giant-stone/go#custom-logging) 将集成格式化、自动切割、日志分级，满足大部分服务 99% 以上场景
 	glogging.Init([]string{"stdout"}, "debug")
 
-	broker, err := gmq.NewBrokerRedis(dsn)
+	broker, err := gmq.NewBrokerRedis(dsn, "")
 	gutil.ExitOnErr(err)
 
 	ctx := context.Background()
@@ -42,7 +42,7 @@ func main() {
 	mux := gmq.NewMux()
 
 	// 用一个子协程模拟实现消息队列生产者
-	cli, err := gmq.NewClientRedis(dsn)
+	cli, err := gmq.NewClientRedis(dsn, "")
 	gutil.ExitOnErr(err)
 	go func() {
 		for {

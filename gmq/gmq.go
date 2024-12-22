@@ -1,7 +1,7 @@
 package gmq
 
 const (
-	Namespace = "gmq"
+	DefaultNamespace = "gmq"
 )
 
 const (
