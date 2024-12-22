@@ -285,8 +285,3 @@ func TestBrokerRedis_ClientEnqueueOptUniqueIn(t *testing.T) {
 	broker := getTestBrokerRedis(t)
 	testClient_EnqueueOptUniqueIn(t, broker)
 }
-
-func TestBrokerRedis_ClientEnqueueOptTypeIgnoreUnique(t *testing.T) {
-	broker := getTestBrokerRedis(t)
-	testClient_EnqueueOptTypeIgnoreUnique(t, broker)
-}

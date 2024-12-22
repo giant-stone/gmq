@@ -10,7 +10,6 @@ type OptTypeClient int
 const (
 	OptTypeQueueName OptTypeClient = iota
 	OptTypeUniqueIn
-	OptTypeIgnoreUnique
 )
 
 type OptionClient interface {
@@ -49,15 +48,3 @@ func OptUniqueIn(a time.Duration) OptionClient {
 func (it uniqueInOption) String() string      { return fmt.Sprintf("OptUniqueIn(%v)", time.Duration(it)) }
 func (it uniqueInOption) Type() OptTypeClient { return OptTypeUniqueIn }
 func (it uniqueInOption) Value() interface{}  { return time.Duration(it) }
-
-// OptTypeIgnoreUnique client option customs enqueue item unique behave.
-type (
-	ignoreUniqueOption bool
-)
-
-func OptIgnoreUnique(s bool) OptionClient {
-	return ignoreUniqueOption(s)
-}
-func (it ignoreUniqueOption) String() string      { return fmt.Sprintf("OptIgnoreUnique(%v)", bool(it)) }
-func (it ignoreUniqueOption) Type() OptTypeClient { return OptTypeIgnoreUnique }
-func (it ignoreUniqueOption) Value() interface{}  { return bool(it) }

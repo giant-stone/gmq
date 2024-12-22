@@ -196,7 +196,7 @@ var scriptEnqueueUnique = redis.NewScript(`
 -- NOTICE: everything pass them via args data type is **string**,
 -- boolean will transform from true to "1", false to "0".
 --
-if ARGV[7] == "0" and redis.call("EXISTS", KEYS[1]) == 1 then
+if redis.call("EXISTS", KEYS[1]) == 1 then
 	return 1
 end
 redis.call("PSETEX", KEYS[1], ARGV[1], ARGV[6])
@@ -220,7 +220,6 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 	queueName := msg.GetQueue()
 
 	var uniqueInMs int64
-	var ignoreUnique bool
 	for _, opt := range opts {
 		switch opt.Type() {
 		case OptTypeQueueName:
@@ -236,10 +235,6 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 				if value > 0 {
 					uniqueInMs = value
 				}
-			}
-		case OptTypeIgnoreUnique:
-			{
-				ignoreUnique = opt.Value().(bool)
 			}
 		}
 	}
@@ -272,6 +267,8 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 		NewKeyQueuePending(it.namespace, queueName),
 	}
 
+	// NOTICE: Everything pass them via args data type is **string**,
+	//  boolean will transform from true to "1", false to "0".
 	args := []interface{}{
 		uniqueInMs,
 		payload,
@@ -279,10 +276,6 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 		nowInMs,
 		expireAt,
 		msgId,
-
-		// NOTICE: everything pass them via args data type is **string**,
-		// boolean will transform from true to "1", false to "0".
-		ignoreUnique,
 	}
 	resI, err = scriptEnqueueUnique.Run(ctx, it.cli, keys, args...).Result()
 
