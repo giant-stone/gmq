@@ -1,6 +1,7 @@
 module github.com/giant-stone/gmq
 
 go 1.21
+toolchain go1.22.5
 
 require (
 	github.com/bwmarrin/snowflake v0.3.0
@@ -9,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/stretchr/testify v1.10.0
-	go.uber.org/mock v0.4.0
+	go.uber.org/mock v0.5.0
 	golang.org/x/net v0.33.0
 	golang.org/x/time v0.5.0
 )
