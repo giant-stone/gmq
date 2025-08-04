@@ -7,6 +7,8 @@ gmq 一个支持自定义消费速率的简单消息队列。
 [![Go Report Card](https://goreportcard.com/badge/github.com/giant-stone/gmq)](https://goreportcard.com/report/github.com/giant-stone/gmq)
 [![GoDoc](https://godoc.org/github.com/giant-stone/gmq?status.svg)](https://godoc.org/github.com/giant-stone/gmq)
 
+Build requirement: Go 1.20.
+
 特性
 
 - [x] 处理消息失败默认自动存档
