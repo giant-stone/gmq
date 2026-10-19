@@ -2,6 +2,7 @@ package gmq
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/giant-stone/go/ghuman"
@@ -10,8 +11,10 @@ import (
 
 // Cleaner auto-delete dead or failed messages, completed messages at intervals.
 type Cleaner struct {
-	broker Broker
-	ctx    context.Context
+	broker  Broker
+	ctx     context.Context
+	cancel  context.CancelFunc
+	workers sync.WaitGroup
 	// rate limiter to prevent spamming logs with a bunch of errors.
 	errLogLimiter *rate.Limiter
 	logger        Logger
@@ -29,9 +32,11 @@ type CleanerParams struct {
 }
 
 func NewCleaner(params CleanerParams) *Cleaner {
+	ctx, cancel := context.WithCancel(params.Ctx)
 	return &Cleaner{
 		broker:        params.Broker,
-		ctx:           params.Ctx,
+		ctx:           ctx,
+		cancel:        cancel,
 		errLogLimiter: rate.NewLimiter(rate.Every(1*time.Second), 1),
 		logger:        params.Logger,
 		msgMaxTTL:     params.MsgMaxTTL,
@@ -42,8 +47,11 @@ func NewCleaner(params CleanerParams) *Cleaner {
 func (it *Cleaner) start() {
 	it.exec()
 
+	it.workers.Add(1)
 	go func() {
+		defer it.workers.Done()
 		t := time.NewTicker(it.msgMaxTTL / 2)
+		defer t.Stop()
 
 		for {
 			select {
@@ -59,6 +67,11 @@ func (it *Cleaner) start() {
 			}
 		}
 	}()
+}
+
+func (it *Cleaner) shutdown() {
+	it.cancel()
+	it.workers.Wait()
 }
 
 func (it *Cleaner) exec() {

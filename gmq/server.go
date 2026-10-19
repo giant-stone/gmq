@@ -112,6 +112,9 @@ func (it *Server) Shutdown() {
 	for _, p := range it.processors {
 		p.shutdown()
 	}
+	if it.cleaner != nil {
+		it.cleaner.shutdown()
+	}
 
 	it.broker.Close()
 }

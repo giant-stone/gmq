@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS daily_stats (
+  queue TEXT NOT NULL REFERENCES queues(name) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  completed INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (queue, date)
+);

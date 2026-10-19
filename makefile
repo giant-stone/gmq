@@ -39,5 +39,5 @@ typecheck:
 	go vet ./...
 
 format:
-	gofmt -w gmq examples internal
+	gofmt -w gmq examples internal schemas
 	npx --yes prettier --write cspell.config.yaml prettier.config.cjs

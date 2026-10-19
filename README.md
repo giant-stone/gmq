@@ -167,6 +167,52 @@ checkout 队列限制 worker 一个，每 500 毫秒 生产 1 条，消费间隔
 
 ## Advanced Topics
 
+### SQLite broker
+
+Use SQLite for a persistent local queue without a Redis server or CGO:
+
+```go
+broker, err := gmq.NewBrokerSQLite("queue.db")
+if err != nil {
+	log.Fatal(err)
+}
+defer broker.Close()
+
+client, err := gmq.NewClientFromBroker(broker)
+if err != nil {
+	log.Fatal(err)
+}
+_, err = client.Enqueue(context.Background(), &gmq.Msg{
+	Id:      "daily-report",
+	Queue:   "reports",
+	Payload: []byte(`{"date":"2026-10-19"}`),
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+// Pass broker to gmq.NewServer with the usual configuration and handlers.
+```
+
+`NewBrokerSQLite` accepts a database filename, a SQLite `file:` URI, or `:memory:`
+for an isolated temporary database. The parent directory must already exist.
+The constructor applies embedded SQL migrations in a transaction. Table schemas,
+migrations, and protobuf model definitions live under `schemas/`.
+
+The broker implements the full `Broker` interface: FIFO claims, deduplication,
+failure history, cleanup, persistent pause/resume, and daily/weekly statistics.
+File databases use SQLite WAL mode. Multiple broker instances can share a local database file; claims are atomic,
+and writes wait up to five seconds for another writer. Completed messages keep
+their ID reservation until the uniqueness deadline. Processing messages remain
+in that state after reopening; recovery requires explicit deletion and enqueueing.
+The existing command-line tool still connects to Redis.
+
+Run the SQLite tests without external services:
+
+```sh
+go test ./gmq -run TestBrokerSQLite -count=1
+```
+
 更多功能见 [giant-stone/gmq/wiki](https://github.com/giant-stone/gmq/wiki)
 
 ## Run tests

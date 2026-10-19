@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -12,8 +13,10 @@ import (
 
 // Processor manages queue worker(s) for consuming messages.
 type Processor struct {
-	ctx    context.Context
-	broker Broker
+	ctx     context.Context
+	cancel  context.CancelFunc
+	workers sync.WaitGroup
+	broker  Broker
 	// rate limiter to prevent spamming logs with a bunch of errors.
 	errLogLimiter *rate.Limiter
 	handler       IHandler
@@ -53,9 +56,11 @@ func NewProcessor(params ProcessorParams) *Processor {
 		params.RestIfNoMsg = time.Second
 	}
 
+	ctx, cancel := context.WithCancel(params.Ctx)
 	return &Processor{
 		broker:        params.Broker,
-		ctx:           params.Ctx,
+		ctx:           ctx,
+		cancel:        cancel,
 		errLogLimiter: rate.NewLimiter(rate.Every(3*time.Second), 1),
 		handler:       params.Handler,
 		logger:        params.Logger,
@@ -74,7 +79,9 @@ func (it *Processor) start() {
 		it.logger.Error("broker.Init ", err)
 	}
 
+	it.workers.Add(1)
 	go func() {
+		defer it.workers.Done()
 		for {
 			select {
 			case <-it.ctx.Done():
@@ -91,16 +98,20 @@ func (it *Processor) start() {
 
 func (it *Processor) exec() {
 	select {
+	case <-it.ctx.Done():
+		return
 	case it.semaphore <- struct{}{}:
 		{
+			it.workers.Add(1)
 			go func() {
+				defer it.workers.Done()
+				defer func() { <-it.semaphore }()
 				msg, err := it.broker.Dequeue(it.ctx, it.queueName)
 
 				switch {
 				case errors.Is(err, ErrNoMsg):
 					{
-						time.Sleep(it.restIfNoMsg)
-						<-it.semaphore
+						it.wait(it.restIfNoMsg)
 						return
 					}
 				case err != nil:
@@ -108,13 +119,11 @@ func (it *Processor) exec() {
 						if it.errLogLimiter.Allow() && err != context.Canceled && err != redis.ErrClosed {
 							it.logger.Errorf("queue=%s broker.Dequeue %v", it.queueName, err)
 						}
-						<-it.semaphore
 						return
 					}
 				}
 
 				if msg == nil {
-					<-it.semaphore
 					return
 				}
 				var remain int64
@@ -132,11 +141,10 @@ func (it *Processor) exec() {
 
 				if err != context.DeadlineExceeded {
 					if it.workerWorkIntervalFunc != nil && remain > 0 {
-						time.Sleep(time.Millisecond * time.Duration(remain))
+						it.wait(time.Millisecond * time.Duration(remain))
 					}
 				}
 
-				<-it.semaphore
 			}()
 		}
 	}
@@ -144,17 +152,28 @@ func (it *Processor) exec() {
 
 func (it *Processor) handleFailedMsg(msg IMsg, errFail error) {
 	err := it.broker.Fail(it.ctx, msg, errFail)
-	if err != nil && it.errLogLimiter.Allow() {
+	if err != nil && !errors.Is(err, context.Canceled) && it.errLogLimiter.Allow() {
 		it.logger.Errorf("broker.Fail %v, queue=%s msgId=%s", err, it.queueName, msg.GetId())
 	}
 }
 
 func (it *Processor) handleSuccessMsg(msg IMsg) {
 	err := it.broker.Complete(it.ctx, msg)
-	if err != nil && it.errLogLimiter.Allow() {
+	if err != nil && !errors.Is(err, context.Canceled) && it.errLogLimiter.Allow() {
 		it.logger.Errorf("broker.Complete %v, queue=%s msgId=%s", err, it.queueName, msg.GetId())
 	}
 }
 
 func (it *Processor) shutdown() {
+	it.cancel()
+	it.workers.Wait()
+}
+
+func (it *Processor) wait(duration time.Duration) {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-it.ctx.Done():
+	case <-timer.C:
+	}
 }

@@ -250,6 +250,7 @@ func CheckBrokerDeleteAgo(t *testing.T, broker Broker) {
 
 	err := srv.Run(mux)
 	require.NoError(t, err, "srv.Run")
+	defer srv.Shutdown()
 
 	_, err = broker.Enqueue(ctx, msg, OptUniqueIn(msgTTLUniq))
 	require.NoError(t, err)
