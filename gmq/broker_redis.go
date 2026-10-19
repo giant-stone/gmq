@@ -205,7 +205,7 @@ redis.call("HSET", KEYS[2],
  "state",   ARGV[3],
  "created", ARGV[4],
  "updated", ARGV[4],
- "expireat", ARGV[5])
+ "expire_at", ARGV[5])
 redis.call("RPUSH", KEYS[3], ARGV[6])
 return 0
 `)
@@ -469,14 +469,14 @@ func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (
 // ARGV[1] -> cutoff
 // ARGV[2] -> Length of KEYS
 // ARGV[3] -> "created"
-// ARGV[4] -> "expireat"
+// ARGV[4] -> "expire_at"
 var scriptDeleteAgo = redis.NewScript(`
 local totalKeys = tonumber(ARGV[2])
 for i=3, totalKeys, 2 do
 	local keyMsgDetail = KEYS[i+1]
 	local created = redis.call("HGET", keyMsgDetail, ARGV[3])
-	local expireat = redis.call("HGET", keyMsgDetail, ARGV[4])
-	if (created and tonumber(created) <= tonumber(ARGV[1])) or (expireat and tonumber(expireat) <= tonumber(ARGV[1])) then
+	local expire_at = redis.call("HGET", keyMsgDetail, ARGV[4])
+	if (created and tonumber(created) <= tonumber(ARGV[1])) or (expire_at and tonumber(expire_at) <= tonumber(ARGV[1])) then
 		local msgId = KEYS[i]
 		redis.call("DEL", keyMsgDetail)
 		redis.call("LREM", KEYS[1], 0, msgId)
@@ -527,7 +527,7 @@ func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, duration
 				cutoff,
 				len(scriptKeys),
 				"created",
-				"expireat",
+				"expire_at",
 			}
 
 			_, err = scriptDeleteAgo.Run(ctx, it.cli, scriptKeys, args).Result()
@@ -751,7 +751,7 @@ func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg
 		Id:        msgId,
 		Queue:     queueName,
 		Created:   gstr.Atoi64(values["created"]),
-		ExpiresAt: gstr.Atoi64(values["expireat"]),
+		ExpiresAt: gstr.Atoi64(values["expire_at"]),
 		Err:       values["err"],
 		State:     values["state"],
 		Updated:   gstr.Atoi64(values["updated"]),
@@ -967,13 +967,13 @@ func parseMsgFromRedisLuaHashValuesResult(pairs interface{}) (msg *Msg, err erro
 	state, _ := values["state"].(string)
 	created, _ := values["created"].(string)
 	updated, _ := values["updated"].(string)
-	expireat, _ := values["expireat"].(string)
+	expire_at, _ := values["expire_at"].(string)
 
 	return &Msg{
 		Payload:   []byte(payload),
 		State:     state,
 		Created:   gstr.Atoi64(created),
-		ExpiresAt: gstr.Atoi64(expireat),
+		ExpiresAt: gstr.Atoi64(expire_at),
 		Updated:   gstr.Atoi64(updated),
 	}, nil
 }

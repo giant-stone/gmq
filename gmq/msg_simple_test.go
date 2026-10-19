@@ -6,15 +6,14 @@ import (
 	"testing"
 )
 
-func TestMsgExpirationJSONCompatibility(t *testing.T) {
+func TestMsgExpirationJSONField(t *testing.T) {
 	const expiration = int64(123456789)
 	data, err := json.Marshal(Msg{ExpiresAt: expiration})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// cspell:ignore expireat
-	if !strings.Contains(string(data), `"expireat":123456789`) {
-		t.Fatalf("expiration storage key changed: %s", data)
+	if !strings.Contains(string(data), `"expire_at":123456789`) {
+		t.Fatalf("unexpected expiration JSON field: %s", data)
 	}
 	var message Msg
 	if err := json.Unmarshal(data, &message); err != nil {

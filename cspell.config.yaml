@@ -51,10 +51,6 @@ overrides:
       - RPUSH
       - smembers
       - tonumber
-      - expireat
-  - filename: gmq/msg_simple.go
-    words:
-      - expireat
   - filename: examples/crawl/impl/*.go
     words:
       - IMDb
