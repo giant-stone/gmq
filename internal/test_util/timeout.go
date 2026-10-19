@@ -1,5 +1,5 @@
-// Package testutil provides bounded contexts for the shared broker tests.
-package testutil
+// Package test_util provides bounded contexts for the shared broker tests.
+package test_util
 
 import (
 	"context"

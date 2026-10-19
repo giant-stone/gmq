@@ -36,7 +36,7 @@ func RunCrawlServer(ctx context.Context, broker gmq.Broker) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	srv := gmq.NewServer(ctx, broker, &gmq.Config{Logger: glogging.Sugared,
-		QueueCfgs: map[string]*gmq.QueueCfg{
+		QueueConfigs: map[string]*gmq.QueueCfg{
 			// 队列名 - 队列配置
 			queueName: gmq.NewQueueCfg(
 				gmq.OptQueueWorkerNum(1),                    // 配置限制队列只有一个 worker

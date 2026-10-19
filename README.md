@@ -106,7 +106,7 @@ func main() {
 
 ```
 
-完整代码见 examples/pushmsg/main.go .
+完整代码见 examples/push_msg/main.go .
 
 如果不加队列配置，默认全速消费，每个队列会生成和机器 CPU (`runtime.NumCPU()`)数量一致 workers
 
@@ -127,9 +127,9 @@ func main() {
 
 	// ...
 
-	slowQueueName := "seckill"
+	slowQueueName := "checkout"
 	srv := gmq.NewServer(ctx, broker, &gmq.Config{Logger: glogging.Sugared,
-		QueueCfgs: map[string]*gmq.QueueCfg{
+		QueueConfigs: map[string]*gmq.QueueCfg{
 			// 队列名 - 队列配置
 			slowQueueName: gmq.NewQueueCfg(
 				gmq.OptQueueWorkerNum(1),                    // 配置限制队列只有一个 worker
@@ -141,7 +141,7 @@ func main() {
 	// ...
 ```
 
-完整代码见 examples/queuecfg/main.go .
+完整代码见 examples/queue_config/main.go .
 
 消费效果输出
 
@@ -149,21 +149,21 @@ func main() {
 2022-07-05T10:56:00.779+0800    DEBUG   workInterval/main.go:65 consume id=a8f39ae3-de80-40a2-bdf4-a6cbbcf7cf59 queue=default payload={"data":"hello world"}
 2022-07-05T10:56:01.794+0800    DEBUG   workInterval/main.go:65 consume id=077d0595-9e8c-4211-b450-86fd4215fe40 queue=default payload={"data":"hello world"}
 2022-07-05T10:56:01.797+0800    DEBUG   workInterval/main.go:65 consume id=4c361217-59bc-4058-88f2-6aff96f51373 queue=default payload={"data":"hello world"}
-2022-07-05T10:56:02.701+0800    DEBUG   workInterval/main.go:70 consume id=116b8e73-9a8c-4832-b14a-9efba742159f queue=seckill payload={"fulluri":"worldgold.xxoo/123"}
+2022-07-05T10:56:02.701+0800    DEBUG   workInterval/main.go:70 consume id=116b8e73-9a8c-4832-b14a-9efba742159f queue=checkout payload={"fullURI":"example.sample/123"}
 2022-07-05T10:56:02.813+0800    DEBUG   workInterval/main.go:65 consume id=6cc3331a-f054-4155-8b04-d57922ecb4c9 queue=default payload={"data":"hello world"}
 2022-07-05T10:56:02.815+0800    DEBUG   workInterval/main.go:65 consume id=0cb698e1-00ed-4353-9e00-a5102fa1f0cc queue=default payload={"data":"hello world"}
 2022-07-05T10:56:03.828+0800    DEBUG   workInterval/main.go:65 consume id=4e1db153-3177-4ffc-82f1-8f31c0a4dddf queue=default payload={"data":"hello world"}
 2022-07-05T10:56:03.833+0800    DEBUG   workInterval/main.go:65 consume id=d6cd0836-29df-448b-943a-0082d7bfe7fe queue=default payload={"data":"hello world"}
 2022-07-05T10:56:04.842+0800    DEBUG   workInterval/main.go:65 consume id=69569019-8448-47ef-9277-83ef85b4ef70 queue=default payload={"data":"hello world"}
 2022-07-05T10:56:04.844+0800    DEBUG   workInterval/main.go:65 consume id=2bd5db36-c13c-49de-abf7-26e2aad681df queue=default payload={"data":"hello world"}
-2022-07-05T10:56:05.712+0800    DEBUG   workInterval/main.go:70 consume id=9c1909f0-3f83-438e-8c98-c0dd7d7d1150 queue=seckill payload={"fulluri":"worldgold.xxoo/123"}
+2022-07-05T10:56:05.712+0800    DEBUG   workInterval/main.go:70 consume id=9c1909f0-3f83-438e-8c98-c0dd7d7d1150 queue=checkout payload={"fullURI":"example.sample/123"}
 2022-07-05T10:56:05.852+0800    DEBUG   workInterval/main.go:65 consume id=9f5d7b9f-fbf1-48cf-8ccc-e626f198e72d queue=default payload={"data":"hello world"}
 2022-07-05T10:56:05.857+0800    DEBUG   workInterval/main.go:65 consume id=ccd2f9ae-4b74-4b92-9321-d65872ae7b36 queue=default payload={"data":"hello world"}
 // ...
 ```
 
 default 队列无限制 worker 数量，每 500 毫秒 生产 1 条，消费无间隔，所以每秒消费 2 条 ~= 500 毫秒/条；
-seckill 队列限制 worker 一个，每 500 毫秒 生产 1 条，消费间隔 3 秒一条，所以每秒消费 0.33/条 ~= 3 秒/条，和期望一致。
+checkout 队列限制 worker 一个，每 500 毫秒 生产 1 条，消费间隔 3 秒一条，所以每秒消费 0.33/条 ~= 3 秒/条，和期望一致。
 
 ## Advanced Topics
 
@@ -174,7 +174,7 @@ seckill 队列限制 worker 一个，每 500 毫秒 生产 1 条，消费间隔 
 run tests on Windows
 
 ```
-set GMQ_RDS="redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1"
+set "GMQ_RDS=redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1"
 go test -v ./...
 ```
 
@@ -184,3 +184,13 @@ run tests on macOS/Linux
 export GMQ_RDS="redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1"
 go test -v ./...
 ```
+
+## Spell checking
+
+Run `make spell` or `npx --yes cspell lint --no-progress` to check the repository.
+Generated code and `go.sum` are excluded. Only add unrecognized dependency terms
+that occur in checked files; keep fixed protocol names in file-scoped exceptions.
+
+Naming cleanup: the old message expiration field is now `Msg.ExpiresAt`, the old queue configuration map is now
+`Config.QueueConfigs`, and the old Lua success constant is now `LuaReturnCodeSuccess`.
+The stored expiration field and existing CLI flags retain their original spelling.

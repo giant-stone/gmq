@@ -71,7 +71,7 @@ func (it *Cleaner) exec() {
 			if err != nil && err != context.Canceled {
 				it.logger.Errorf("DeleteAgo %v, queue=%s msgMaxTTL=%s elapsed=%s", err, queueName, ghuman.FmtDuration(it.msgMaxTTL), ghuman.FmtDuration(elapsed))
 			} else {
-				it.logger.Debugf("DeleteAgo succ queue=%s msgMaxTTL=%s elapsed=%s", queueName, ghuman.FmtDuration(it.msgMaxTTL), ghuman.FmtDuration(elapsed))
+				it.logger.Debugf("DeleteAgo success queue=%s msgMaxTTL=%s elapsed=%s", queueName, ghuman.FmtDuration(it.msgMaxTTL), ghuman.FmtDuration(elapsed))
 			}
 		}
 	}

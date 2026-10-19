@@ -33,32 +33,32 @@ type SchedulerParams struct {
 	EnqueueErrorHandler FuncEnqueueErrorHandler
 }
 
-func NewScheduler(parmas SchedulerParams) *Scheduler {
-	if parmas.Logger == nil {
-		parmas.Logger = glogging.Sugared
+func NewScheduler(parameters SchedulerParams) *Scheduler {
+	if parameters.Logger == nil {
+		parameters.Logger = glogging.Sugared
 	}
 
-	if parmas.Location == nil {
+	if parameters.Location == nil {
 		loc, err := time.LoadLocation("UTC")
 		if err != nil {
-			parmas.Logger.Fatal(`LoadLocation("UTC") fail`)
+			parameters.Logger.Fatal(`LoadLocation("UTC") fail`)
 		}
-		parmas.Location = loc
+		parameters.Location = loc
 	}
 
-	client, err := NewClientFromBroker(parmas.Broker)
+	client, err := NewClientFromBroker(parameters.Broker)
 	if err != nil {
-		parmas.Logger.Fatalf(`NewClientFromBroker %v`, err)
+		parameters.Logger.Fatalf(`NewClientFromBroker %v`, err)
 	}
 
 	return &Scheduler{
-		ctx:              parmas.Ctx,
-		cron:             cron.New(cron.WithLocation(parmas.Location)),
+		ctx:              parameters.Ctx,
+		cron:             cron.New(cron.WithLocation(parameters.Location)),
 		client:           client,
-		logger:           parmas.Logger,
-		location:         parmas.Location,
+		logger:           parameters.Logger,
+		location:         parameters.Location,
 		jobId2EntryIdMap: make(map[string]cron.EntryID),
-		errHandler:       parmas.EnqueueErrorHandler,
+		errHandler:       parameters.EnqueueErrorHandler,
 	}
 }
 

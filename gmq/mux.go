@@ -11,7 +11,7 @@ import (
 type Mux struct {
 	mu     sync.RWMutex
 	m      map[string]MuxEntry
-	sorted []MuxEntry // order entries arefrom longest to shortest.
+	sorted []MuxEntry // order entries are from longest to shortest.
 	mws    []MiddlewareFunc
 }
 
@@ -120,7 +120,7 @@ func appendSorted(sorted []MuxEntry, e MuxEntry) []MuxEntry {
 		return append(sorted, e)
 	}
 
-	// order entries arefrom longest to shortest.
+	// order entries are from longest to shortest.
 	sorted = append(sorted, MuxEntry{})
 	copy(sorted[i+1:], sorted[i:])
 	sorted[i] = e

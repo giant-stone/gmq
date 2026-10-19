@@ -5,15 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/giant-stone/gmq/internal/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giant-stone/gmq/gmq"
+	"github.com/giant-stone/gmq/internal/test_util"
 	"github.com/giant-stone/go/grand"
 )
 
 func testClient_Enqueue(t *testing.T, broker gmq.Broker) {
-	testCtx := testutil.Context(t)
+	testCtx := test_util.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
@@ -54,7 +54,7 @@ func testClient_Enqueue(t *testing.T, broker gmq.Broker) {
 }
 
 func testClient_Dequeue(t *testing.T, broker gmq.Broker) {
-	testCtx := testutil.Context(t)
+	testCtx := test_util.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
@@ -62,7 +62,7 @@ func testClient_Dequeue(t *testing.T, broker gmq.Broker) {
 	require.NoError(t, err, "gmq.NewClientFromBroker")
 
 	now := time.Now()
-	nowMilli := now.UnixMilli()
+	nowMilliseconds := now.UnixMilli()
 	msgId := fmt.Sprintf("%s.%d", grand.String(10), now.UnixNano())
 	payload := []byte(`{"hello":"world"}`)
 	queueName := grand.String(10)
@@ -82,12 +82,12 @@ func testClient_Dequeue(t *testing.T, broker gmq.Broker) {
 	require.Equal(t, msgWant.GetPayload(), msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, payload, msgGot.GetPayload(), "GetPayload")
 	require.Equal(t, gmq.MsgStateProcessing, msgGot.State, "msg.State")
-	require.Equal(t, nowMilli/1000, msgGot.Created/1000, "msg.Created")
-	require.LessOrEqual(t, nowMilli, msgGot.Updated, "msg.Updated")
+	require.Equal(t, nowMilliseconds/1000, msgGot.Created/1000, "msg.Created")
+	require.LessOrEqual(t, nowMilliseconds, msgGot.Updated, "msg.Updated")
 }
 
 func testClient_EnqueueDuplicatedMsg(t *testing.T, broker gmq.Broker) {
-	testCtx := testutil.Context(t)
+	testCtx := test_util.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
@@ -129,7 +129,7 @@ func testClient_EnqueueDuplicatedMsg(t *testing.T, broker gmq.Broker) {
 }
 
 func testClient_EnqueueOptQueueName(t *testing.T, broker gmq.Broker) {
-	testCtx := testutil.Context(t)
+	testCtx := test_util.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
@@ -163,7 +163,7 @@ func testClient_EnqueueOptQueueName(t *testing.T, broker gmq.Broker) {
 }
 
 func testClient_EnqueueOptUniqueIn(t *testing.T, broker gmq.Broker) {
-	testCtx := testutil.Context(t)
+	testCtx := test_util.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 

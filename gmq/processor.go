@@ -22,8 +22,8 @@ type Processor struct {
 
 	queueName string
 
-	// sema is a counting semaphore to ensure the number of active workers does not exceed the limit.
-	sema                   chan struct{}
+	// semaphore is a counting semaphore to ensure the number of active workers does not exceed the limit.
+	semaphore              chan struct{}
 	workerNum              uint16
 	workerWorkIntervalFunc FuncWorkInterval
 }
@@ -60,7 +60,7 @@ func NewProcessor(params ProcessorParams) *Processor {
 		handler:       params.Handler,
 		logger:        params.Logger,
 		restIfNoMsg:   params.RestIfNoMsg,
-		sema:          make(chan struct{}, params.WorkerNum),
+		semaphore:     make(chan struct{}, params.WorkerNum),
 
 		workerNum:              params.WorkerNum,
 		queueName:              params.QueueName,
@@ -91,7 +91,7 @@ func (it *Processor) start() {
 
 func (it *Processor) exec() {
 	select {
-	case it.sema <- struct{}{}:
+	case it.semaphore <- struct{}{}:
 		{
 			go func() {
 				msg, err := it.broker.Dequeue(it.ctx, it.queueName)
@@ -100,7 +100,7 @@ func (it *Processor) exec() {
 				case errors.Is(err, ErrNoMsg):
 					{
 						time.Sleep(it.restIfNoMsg)
-						<-it.sema
+						<-it.semaphore
 						return
 					}
 				case err != nil:
@@ -108,13 +108,13 @@ func (it *Processor) exec() {
 						if it.errLogLimiter.Allow() && err != context.Canceled && err != redis.ErrClosed {
 							it.logger.Errorf("queue=%s broker.Dequeue %v", it.queueName, err)
 						}
-						<-it.sema
+						<-it.semaphore
 						return
 					}
 				}
 
 				if msg == nil {
-					<-it.sema
+					<-it.semaphore
 					return
 				}
 				var remain int64
@@ -136,7 +136,7 @@ func (it *Processor) exec() {
 					}
 				}
 
-				<-it.sema
+				<-it.semaphore
 			}()
 		}
 	}

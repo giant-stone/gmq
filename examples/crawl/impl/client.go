@@ -16,11 +16,11 @@ import (
 )
 
 const (
-	queueName        = "crawlIMDB"
-	IMDBPrefix       = "https://imdb.com"
-	Source           = "IMDB"
-	UniqueIn         = 60 * 60 * 24 // seconds ， 防止重复入队
-	ProcessdInterval = 10           // seconds ， 处理间隔，避免IP被封
+	queueName          = "crawlIMDB"
+	IMDBPrefix         = "https://imdb.com"
+	Source             = "IMDB"
+	UniqueIn           = 60 * 60 * 24 // seconds ， 防止重复入队
+	ProcessingInterval = 10           // seconds ， 处理间隔，避免IP被封
 )
 
 func RunCrawlClient(ctx context.Context, broker gmq.Broker) {
@@ -65,10 +65,10 @@ func RunCrawlClient(ctx context.Context, broker gmq.Broker) {
 }
 
 // 创建消息
-func imdbMsg(url string, TopIndx int) *gmq.Msg {
+func imdbMsg(url string, topIndex int) *gmq.Msg {
 	return &gmq.Msg{
 		Payload: []byte(fmt.Sprintf("{%s: %s}", strconv.Quote("url"), strconv.Quote(url))),
-		Id:      "Top" + strconv.Itoa(TopIndx),
+		Id:      "Top" + strconv.Itoa(topIndex),
 		Queue:   queueName,
 		State:   "pending",
 		Created: time.Now().UnixMilli(),

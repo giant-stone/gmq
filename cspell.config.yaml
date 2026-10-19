@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json
+$schema: https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json
+version: "0.2"
+language: en
+useGitignore: true
+files:
+  - "**/*"
+ignorePaths:
+  - cspell.config.yaml
+  - go.sum
+  - go.mod
+words:
+  # Dependency names and APIs used across checked source files.
+  - bwmarrin
+  - Debugf
+  - ghuman
+  - glogging
+  - gomock
+  - gstr
+  - gtime
+  - gutil
+  - Infof
+  - Loglevel
+  - robfig
+  - stretchr
+  - Warnf
+  # Project names and Go build tools.
+  - gmq
+  - gmqcli
+  - testutil
+  - GOARCH
+  - ldflags
+  - timetzdata
+  - trimpath
+  - mockgen
+  - gofmt
+overrides:
+  - filename: gmq/broker_mock.go
+    words:
+      - varargs
+  - filename: gmq/broker_redis.go
+    words:
+      - HGET
+      - HGETALL
+      - HSET
+      - ipairs
+      - LREM
+      - LPUSH
+      - PSETEX
+      - RPOPLPUSH
+      - RPUSH
+      - smembers
+      - tonumber
+      - expireat
+  - filename: gmq/msg_simple.go
+    words:
+      - expireat
+  - filename: examples/crawl/impl/*.go
+    words:
+      - IMDb
+      - chttp
+  - filename: README.md
+    words:
+      - hibiken
+      - asynq

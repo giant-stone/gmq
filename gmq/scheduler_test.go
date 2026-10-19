@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/giant-stone/gmq/internal/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giant-stone/gmq/gmq"
+	"github.com/giant-stone/gmq/internal/test_util"
 )
 
 func TestGmq_NewScheduler(t *testing.T) {
-	testCtx := testutil.Context(t)
+	testCtx := test_util.Context(t)
 	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
@@ -25,7 +25,7 @@ func TestGmq_NewScheduler(t *testing.T) {
 }
 
 func TestScheduler_Register(t *testing.T) {
-	testCtx := testutil.Context(t)
+	testCtx := test_util.Context(t)
 	samples := []struct {
 		cronSpec string
 		wait     time.Duration
@@ -35,7 +35,7 @@ func TestScheduler_Register(t *testing.T) {
 		{
 			cronSpec: "@every 1s",
 			wait:     time.Second * time.Duration(1),
-			wantMsg:  &gmq.Msg{Payload: []byte(`{"msg":"hello"}`), Queue: "mycron", Id: fmt.Sprintf("msg%d", time.Now().UnixMilli())},
+			wantMsg:  &gmq.Msg{Payload: []byte(`{"msg":"hello"}`), Queue: "scheduledTask", Id: fmt.Sprintf("msg%d", time.Now().UnixMilli())},
 			wantErr:  nil,
 		},
 	}
@@ -88,7 +88,7 @@ func TestScheduler_Register(t *testing.T) {
 }
 
 func TestScheduler_Unregister(t *testing.T) {
-	testCtx := testutil.Context(t)
+	testCtx := test_util.Context(t)
 	samples := []struct {
 		cronSpec string
 		wait     time.Duration
@@ -98,7 +98,7 @@ func TestScheduler_Unregister(t *testing.T) {
 		{
 			cronSpec: "@every 1s",
 			wait:     time.Second * time.Duration(1),
-			wantMsg:  &gmq.Msg{Payload: []byte(`{"msg":"hello"}`), Queue: "mycron"},
+			wantMsg:  &gmq.Msg{Payload: []byte(`{"msg":"hello"}`), Queue: "scheduledTask"},
 			wantErr:  nil,
 		},
 	}

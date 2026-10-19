@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/giant-stone/gmq/internal/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giant-stone/gmq/gmq"
+	"github.com/giant-stone/gmq/internal/test_util"
 )
 
 func TestGmq_NewServer(t *testing.T) {
-	testCtx := testutil.Context(t)
+	testCtx := test_util.Context(t)
 	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
@@ -30,7 +30,7 @@ func TestGmq_NewServer(t *testing.T) {
 }
 
 func TestGmq_NewServerErrNoHandlers(t *testing.T) {
-	testCtx := testutil.Context(t)
+	testCtx := test_util.Context(t)
 	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
@@ -47,7 +47,7 @@ func TestGmq_NewServerErrNoHandlers(t *testing.T) {
 }
 
 func TestGmq_NewServerDefaultCfg(t *testing.T) {
-	testCtx := testutil.Context(t)
+	testCtx := test_util.Context(t)
 	srv := gmq.NewServer(testCtx, nil, nil)
 	cfg := srv.Cfg()
 	require.Equal(t, time.Second*time.Duration(gmq.TTLMsg), cfg.MsgMaxTTL)

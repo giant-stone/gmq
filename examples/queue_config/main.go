@@ -29,9 +29,9 @@ func main() {
 
 	ctx := context.Background()
 
-	slowQueueName := "seckill"
+	slowQueueName := "checkout"
 	srv := gmq.NewServer(ctx, broker, &gmq.Config{Logger: glogging.Sugared,
-		QueueCfgs: map[string]*gmq.QueueCfg{
+		QueueConfigs: map[string]*gmq.QueueCfg{
 			// 队列名 - 队列配置
 			slowQueueName: gmq.NewQueueCfg(
 				gmq.OptQueueWorkerNum(1),                    // 配置限制队列只有一个 worker
@@ -53,7 +53,7 @@ func main() {
 				{
 					// 如果不指定队列名，gmq 默认使用 gmq.DefaultQueueName
 					cli.Enqueue(ctx, &gmq.Msg{Payload: []byte(`{"data":"hello world"}`)})
-					cli.Enqueue(ctx, &gmq.Msg{Payload: []byte(`{"fulluri":"worldgold.xxoo/123"}`)}, gmq.OptQueueName(slowQueueName))
+					cli.Enqueue(ctx, &gmq.Msg{Payload: []byte(`{"fullURI":"example.sample/123"}`)}, gmq.OptQueueName(slowQueueName))
 					time.Sleep(time.Millisecond * 500)
 				}
 			}

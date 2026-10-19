@@ -63,11 +63,11 @@ type QueueStat struct {
 	Total      int64  `json:"total"`      // all state of message store in Redis
 	Pending    int64  `json:"pending"`    // wait to free worker consume it
 	Processing int64  `json:"processing"` // worker already took and consuming
-	Failed     int64  `json:"failed"`     // occured error, and/or pending to retry
+	Failed     int64  `json:"failed"`     // occurred error, and/or pending to retry
 }
 
 type QueueDailyStat struct {
-	Date      string `json:"date" gorm:"primarykey"` // YYYY-MM-DD in UTC
+	Date      string `json:"date"` // YYYY-MM-DD in UTC
 	Completed int64  `json:"completed"`
 	Failed    int64  `json:"failed"`
 	Total     int64  `json:"total"` // it is equal to Completed + Failed
