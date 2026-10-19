@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package gmq.sqlite;
+
+option go_package = "github.com/giant-stone/gmq/schemas";
+
+// SQL table definitions live in the corresponding schemas/*.sql files.
+message Queue {
+  string name = 1;
+  bool paused = 2;
+}
+
+message Message {
+  int64 sequence = 1;
+  string queue = 2;
+  string id = 3;
+  bytes payload = 4;
+  int64 created = 5;
+  int64 expires_at = 6;
+  int64 updated = 7;
+  // Empty after completion, retaining only the uniqueness reservation.
+  string state = 8;
+}
+
+message Failure {
+  int64 sequence = 1;
+  string queue = 2;
+  string id = 3;
+  bytes payload = 4;
+  int64 created = 5;
+  int64 expires_at = 6;
+  int64 updated = 7;
+  string error = 8;
+}
+
+message DailyStat {
+  string queue = 1;
+  string date = 2;
+  int64 completed = 3;
+  int64 failed = 4;
+}

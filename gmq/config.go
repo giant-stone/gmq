@@ -12,5 +12,5 @@ type Config struct {
 	MsgMaxTTL   time.Duration
 	RestIfNoMsg time.Duration
 
-	QueueCfgs map[string]*QueueCfg
+	QueueConfigs map[string]*QueueCfg
 }

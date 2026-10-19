@@ -59,8 +59,8 @@ func (it *Server) Run(mux *Mux) (err error) {
 	}
 
 	// pattern name is also queue name
-	for queueName := range patterns {
-		queueCfg, ok := it.cfg.QueueCfgs[queueName]
+	for _, queueName := range patterns {
+		queueCfg, ok := it.cfg.QueueConfigs[queueName]
 		params := ProcessorParams{
 			Ctx:         it.ctx,
 			Broker:      it.broker,
@@ -112,22 +112,25 @@ func (it *Server) Shutdown() {
 	for _, p := range it.processors {
 		p.shutdown()
 	}
+	if it.cleaner != nil {
+		it.cleaner.shutdown()
+	}
 
 	it.broker.Close()
 }
 
-func (it *Server) Pause(qname string) error {
-	if _, has := it.queueNames[qname]; !has {
+func (it *Server) Pause(queueName string) error {
+	if _, has := it.queueNames[queueName]; !has {
 		return nil
 	}
-	return it.broker.Pause(it.ctx, qname)
+	return it.broker.Pause(it.ctx, queueName)
 }
 
-func (it *Server) Resume(qname string) error {
-	if _, has := it.queueNames[qname]; !has {
+func (it *Server) Resume(queueName string) error {
+	if _, has := it.queueNames[queueName]; !has {
 		return nil
 	}
-	return it.broker.Resume(it.ctx, qname)
+	return it.broker.Resume(it.ctx, queueName)
 }
 
 func (it *Server) Cfg() *Config {

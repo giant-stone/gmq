@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	LuaReturnCodeSucc = iota // confirm to POSIX shell/C return code common rule, 0 means successfully
+	LuaReturnCodeSuccess = iota // confirm to POSIX shell/C return code common rule, 0 means successfully
 	LuaReturnCodeError
 )
 
@@ -94,8 +94,6 @@ func MakeRedisUniversalClient(opts *redis.Options) (rs interface{}) {
 }
 
 type BrokerRedis struct {
-	BrokerUnimplemented
-
 	cli       redis.UniversalClient
 	clock     Clock
 	namespace string
@@ -205,7 +203,7 @@ redis.call("HSET", KEYS[2],
  "state",   ARGV[3],
  "created", ARGV[4],
  "updated", ARGV[4],
- "expireat", ARGV[5])
+ "expire_at", ARGV[5])
 redis.call("RPUSH", KEYS[3], ARGV[6])
 return 0
 `)
@@ -293,13 +291,13 @@ func (it *BrokerRedis) Enqueue(ctx context.Context, msg IMsg, opts ...OptionClie
 	}
 
 	return &Msg{
-		Created:  nowInMs,
-		Expireat: expireAt,
-		Id:       msgId,
-		Payload:  payload,
-		Queue:    queueName,
-		State:    MsgStatePending,
-		Updated:  nowInMs,
+		Created:   nowInMs,
+		ExpiresAt: expireAt,
+		Id:        msgId,
+		Payload:   payload,
+		Queue:     queueName,
+		State:     MsgStatePending,
+		Updated:   nowInMs,
 	}, nil
 }
 
@@ -366,7 +364,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 		return nil, ErrInternal
 	}
 
-	rawMsg, err := parseMsgFromRedisLuaHgetallResult(res[1])
+	rawMsg, err := parseMsgFromRedisLuaHashValuesResult(res[1])
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +377,7 @@ func (it *BrokerRedis) Dequeue(ctx context.Context, queueName string) (msg *Msg,
 }
 
 // scriptDeleteQueue delete a queue
-// KEYS[1] -> <namespace>:<queuename>:*
+// KEYS[1] -> <namespace>:<queueName>:*
 var scriptDeleteQueue = redis.NewScript(`
 	for k,v in ipairs(KEYS) do 
 		redis.call('del', KEYS[k])
@@ -469,14 +467,14 @@ func (it *BrokerRedis) DeleteMsg(ctx context.Context, queueName, msgId string) (
 // ARGV[1] -> cutoff
 // ARGV[2] -> Length of KEYS
 // ARGV[3] -> "created"
-// ARGV[4] -> "expireat"
+// ARGV[4] -> "expire_at"
 var scriptDeleteAgo = redis.NewScript(`
 local totalKeys = tonumber(ARGV[2])
 for i=3, totalKeys, 2 do
 	local keyMsgDetail = KEYS[i+1]
 	local created = redis.call("HGET", keyMsgDetail, ARGV[3])
-	local expireat = redis.call("HGET", keyMsgDetail, ARGV[4])
-	if (created and tonumber(created) <= tonumber(ARGV[1])) or (expireat and tonumber(expireat) <= tonumber(ARGV[1])) then
+	local expire_at = redis.call("HGET", keyMsgDetail, ARGV[4])
+	if (created and tonumber(created) <= tonumber(ARGV[1])) or (expire_at and tonumber(expire_at) <= tonumber(ARGV[1])) then
 		local msgId = KEYS[i]
 		redis.call("DEL", keyMsgDetail)
 		redis.call("LREM", KEYS[1], 0, msgId)
@@ -527,7 +525,7 @@ func (it *BrokerRedis) DeleteAgo(ctx context.Context, queueName string, duration
 				cutoff,
 				len(scriptKeys),
 				"created",
-				"expireat",
+				"expire_at",
 			}
 
 			_, err = scriptDeleteAgo.Run(ctx, it.cli, scriptKeys, args).Result()
@@ -565,12 +563,12 @@ func (it *BrokerRedis) deleteAgoFailedMsgId(ctx context.Context, queueName strin
 		}
 
 		for _, msgId := range msgIds {
-			delkeyFailedHis, err := it.deleteAgoFailedHistoryItem(ctx, queueName, msgId, cutoff)
+			deleteKeyFailedHis, err := it.deleteAgoFailedHistoryItem(ctx, queueName, msgId, cutoff)
 			if err != nil {
 				return err
 			}
 
-			if delkeyFailedHis {
+			if deleteKeyFailedHis {
 				keyFailedHis := NewKeyQueueFailedHistory(it.namespace, queueName, msgId)
 
 				_, err = it.cli.Del(ctx, keyFailedHis).Result()
@@ -595,7 +593,7 @@ func (it *BrokerRedis) deleteAgoFailedMsgId(ctx context.Context, queueName strin
 	return nil
 }
 
-func (it *BrokerRedis) deleteAgoFailedHistoryItem(ctx context.Context, queueName, msgId string, cutoff int64) (delkeyFailedHis bool, err error) {
+func (it *BrokerRedis) deleteAgoFailedHistoryItem(ctx context.Context, queueName, msgId string, cutoff int64) (deleteKeyFailedHis bool, err error) {
 	keyFailedHis := NewKeyQueueFailedHistory(it.namespace, queueName, msgId)
 	items, err := it.cli.LRange(ctx, keyFailedHis, 0, DefaultMaxItemsLimit-1).Result()
 	if err != nil {
@@ -606,7 +604,7 @@ func (it *BrokerRedis) deleteAgoFailedHistoryItem(ctx context.Context, queueName
 		return true, nil
 	}
 
-	// delete this mesasge expired history item(s)
+	// delete this message expired history item(s)
 	for idx, item := range items {
 		rawMsg := &Msg{}
 		err = json.Unmarshal([]byte(item), rawMsg)
@@ -617,7 +615,7 @@ func (it *BrokerRedis) deleteAgoFailedHistoryItem(ctx context.Context, queueName
 				return false, err
 			}
 		} else {
-			if rawMsg.Created == 0 || (rawMsg.Created > 0 && rawMsg.Created < cutoff) || (rawMsg.Expireat > 0 && rawMsg.Expireat <= cutoff) {
+			if rawMsg.Created == 0 || (rawMsg.Created > 0 && rawMsg.Created < cutoff) || (rawMsg.ExpiresAt > 0 && rawMsg.ExpiresAt <= cutoff) {
 				if idx == 0 {
 					return true, nil
 				}
@@ -632,8 +630,8 @@ func (it *BrokerRedis) deleteAgoFailedHistoryItem(ctx context.Context, queueName
 	return false, nil
 }
 
-func (it *BrokerRedis) Pause(ctx context.Context, qname string) error {
-	key := NewKeyQueuePaused(it.namespace, qname)
+func (it *BrokerRedis) Pause(ctx context.Context, queueName string) error {
+	key := NewKeyQueuePaused(it.namespace, queueName)
 
 	now := it.clock.Now()
 	if it.utc {
@@ -652,8 +650,8 @@ func (it *BrokerRedis) Pause(ctx context.Context, qname string) error {
 	return nil
 }
 
-func (it *BrokerRedis) Resume(ctx context.Context, qname string) error {
-	key := NewKeyQueuePaused(it.namespace, qname)
+func (it *BrokerRedis) Resume(ctx context.Context, queueName string) error {
+	key := NewKeyQueuePaused(it.namespace, queueName)
 	_, err := it.cli.Del(ctx, key).Result()
 	if err != nil {
 		return err
@@ -747,14 +745,14 @@ func (it *BrokerRedis) GetMsg(ctx context.Context, queueName, msgId string) (msg
 	}
 
 	return &Msg{
-		Payload:  []byte(payload),
-		Id:       msgId,
-		Queue:    queueName,
-		Created:  gstr.Atoi64(values["created"]),
-		Expireat: gstr.Atoi64(values["expireat"]),
-		Err:      values["err"],
-		State:    values["state"],
-		Updated:  gstr.Atoi64(values["updated"]),
+		Payload:   []byte(payload),
+		Id:        msgId,
+		Queue:     queueName,
+		Created:   gstr.Atoi64(values["created"]),
+		ExpiresAt: gstr.Atoi64(values["expire_at"]),
+		Err:       values["err"],
+		State:     values["state"],
+		Updated:   gstr.Atoi64(values["updated"]),
 	}, nil
 }
 
@@ -921,7 +919,7 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 		return err
 	}
 
-	rawMsg, err := parseMsgFromRedisLuaHgetallResult(reply)
+	rawMsg, err := parseMsgFromRedisLuaHashValuesResult(reply)
 	if err != nil {
 		return err
 	}
@@ -945,7 +943,7 @@ func (it *BrokerRedis) Fail(ctx context.Context, msg IMsg, errFail error) (err e
 	return nil
 }
 
-func parseMsgFromRedisLuaHgetallResult(pairs interface{}) (msg *Msg, err error) {
+func parseMsgFromRedisLuaHashValuesResult(pairs interface{}) (msg *Msg, err error) {
 	arrayOfString, _ := pairs.([]interface{})
 	n := len(arrayOfString)
 	if n == 0 || n%2 != 0 {
@@ -967,14 +965,14 @@ func parseMsgFromRedisLuaHgetallResult(pairs interface{}) (msg *Msg, err error) 
 	state, _ := values["state"].(string)
 	created, _ := values["created"].(string)
 	updated, _ := values["updated"].(string)
-	expireat, _ := values["expireat"].(string)
+	expire_at, _ := values["expire_at"].(string)
 
 	return &Msg{
-		Payload:  []byte(payload),
-		State:    state,
-		Created:  gstr.Atoi64(created),
-		Expireat: gstr.Atoi64(expireat),
-		Updated:  gstr.Atoi64(updated),
+		Payload:   []byte(payload),
+		State:     state,
+		Created:   gstr.Atoi64(created),
+		ExpiresAt: gstr.Atoi64(expire_at),
+		Updated:   gstr.Atoi64(updated),
 	}, nil
 }
 
@@ -986,3 +984,5 @@ func NewClientRedis(dsn, ns string) (rs *Client, err error) {
 
 	return &Client{Broker: broker}, nil
 }
+
+var _ Broker = (*BrokerRedis)(nil)

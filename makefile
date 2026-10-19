@@ -15,7 +15,8 @@ buildBin:
 	go build $(BUILD_OPTS) -ldflags $(LDFLAGS) -o gmqcli.bin gmq/cmd/gmqcli/main.go
 
 genMock:
-	mockgen -source=gmq/broker.go -destination=gmq/brokermock.go -package=gmq -mock_names Interface=ImplMock
+	go install github.com/golang/mock/mockgen@v1.6.0
+	mockgen -source=gmq/broker.go -destination=gmq/broker_mock.go -package=gmq -mock_names Interface=ImplMock
 
 echoMode:
 	@echo GOOS=$(GOOS)
@@ -23,3 +24,20 @@ echoMode:
 	@echo CGO_ENABLED=$(CGO_ENABLED)
 	@echo MODE=$(MODE)
 	@echo LDFLAGS=$(LDFLAGS)
+
+# Override with make test TEST_TIMEOUT=2m.
+TEST_TIMEOUT?=5m
+.PHONY: test
+test:
+	go test -timeout=$(TEST_TIMEOUT) ./...
+
+.PHONY: spell typecheck format
+spell:
+	npx --yes cspell lint --no-progress
+
+typecheck:
+	go vet ./...
+
+format:
+	gofmt -w gmq examples internal schemas
+	npx --yes prettier --write cspell.config.yaml prettier.config.cjs README.md "docs/**/*.md"

@@ -17,8 +17,6 @@ const (
 type MsgHistory map[string]*list.List // key is <msgId>, value is <msg>
 
 type BrokerInMemory struct {
-	BrokerUnimplemented
-
 	clock Clock
 
 	failedHistory map[string]MsgHistory // key is <queueName>
@@ -331,13 +329,13 @@ func (it *BrokerInMemory) Enqueue(ctx context.Context, msg IMsg, opts ...OptionC
 	l.PushBack(msgId)
 
 	rawMsg := &Msg{
-		Created:  nowInMs,
-		Expireat: expireAt,
-		Id:       msgId,
-		Payload:  payload,
-		Queue:    queueName,
-		State:    MsgStatePending,
-		Updated:  nowInMs,
+		Created:   nowInMs,
+		ExpiresAt: expireAt,
+		Id:        msgId,
+		Payload:   payload,
+		Queue:     queueName,
+		State:     MsgStatePending,
+		Updated:   nowInMs,
 	}
 	it.msgDetail[queueName][msgId] = rawMsg
 
@@ -469,7 +467,7 @@ func (it *BrokerInMemory) GetMsg(ctx context.Context, queueName string, msgId st
 	if msg, ok := msgs[msgId]; !ok {
 		return nil, ErrNoMsg
 	} else {
-		if msg.Expireat > 0 && msg.Expireat < it.getNow().UnixMilli() {
+		if msg.ExpiresAt > 0 && msg.ExpiresAt < it.getNow().UnixMilli() {
 			return nil, ErrNoMsg
 		}
 
@@ -688,3 +686,5 @@ func NewBrokerInMemory(opts *BrokerInMemoryOpts) (rs Broker, err error) {
 	}
 	return broker, nil
 }
+
+var _ Broker = (*BrokerInMemory)(nil)

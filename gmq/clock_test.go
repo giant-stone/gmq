@@ -7,9 +7,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/giant-stone/gmq/gmq"
+	"github.com/giant-stone/gmq/internal/test_util"
 )
 
 func TestGmq_NewSimulatedClock(t *testing.T) {
+	test_util.Context(t)
 	now := time.Now()
 
 	samples := []struct {

@@ -10,8 +10,8 @@ import (
 
 type Mux struct {
 	mu     sync.RWMutex
-	m      map[string]MuxEntry
-	sorted []MuxEntry // order entries arefrom longest to shortest.
+	m      map[string]muxEntry
+	sorted []muxEntry // order entries are from longest to shortest.
 	mws    []MiddlewareFunc
 }
 
@@ -19,17 +19,7 @@ func NewMux() *Mux {
 	return &Mux{}
 }
 
-// SetClock implements IHandler.
-func (fn *Mux) SetClock(c Clock) {
-	panic("unimplemented")
-}
-
-// SetIdGenerator implements IHandler.
-func (fn *Mux) SetIdGenerator(v IdGenerator) {
-	panic("unimplemented")
-}
-
-type MuxEntry struct {
+type muxEntry struct {
 	h       IHandler
 	pattern string
 }
@@ -92,9 +82,9 @@ func (it *Mux) Handle(pattern string, handler IHandler) {
 	}
 
 	if it.m == nil {
-		it.m = make(map[string]MuxEntry)
+		it.m = make(map[string]muxEntry)
 	}
-	e := MuxEntry{h: handler, pattern: pattern}
+	e := muxEntry{h: handler, pattern: pattern}
 	it.m[pattern] = e
 	it.sorted = appendSorted(it.sorted, e)
 }
@@ -105,13 +95,21 @@ func (it *Mux) ProcessMsg(ctx context.Context, msg IMsg) error {
 	return h.ProcessMsg(ctx, msg)
 }
 
-func (it *Mux) GetPatterns() map[string]MuxEntry {
+// GetPatterns returns a sorted snapshot of the registered queue patterns.
+func (it *Mux) GetPatterns() []string {
 	it.mu.RLock()
 	defer it.mu.RUnlock()
-	return it.m
+	patterns := make([]string, 0, len(it.m))
+	for pattern := range it.m {
+		patterns = append(patterns, pattern)
+	}
+	sort.Strings(patterns)
+	return patterns
 }
 
-func appendSorted(sorted []MuxEntry, e MuxEntry) []MuxEntry {
+var _ IHandler = (*Mux)(nil)
+
+func appendSorted(sorted []muxEntry, e muxEntry) []muxEntry {
 	n := len(sorted)
 	i := sort.Search(n, func(i int) bool {
 		return len(sorted[i].pattern) < len(e.pattern)
@@ -120,8 +118,8 @@ func appendSorted(sorted []MuxEntry, e MuxEntry) []MuxEntry {
 		return append(sorted, e)
 	}
 
-	// order entries arefrom longest to shortest.
-	sorted = append(sorted, MuxEntry{})
+	// order entries are from longest to shortest.
+	sorted = append(sorted, muxEntry{})
 	copy(sorted[i+1:], sorted[i:])
 	sorted[i] = e
 	return sorted
