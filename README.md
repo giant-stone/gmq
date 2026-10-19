@@ -1,242 +1,45 @@
-# About
+# gmq
 
-gmq 一个支持自定义消费速率的简单消息队列。
+gmq is a Go message queue with configurable consume intervals and replaceable storage brokers.
 
 [![Go](https://github.com/giant-stone/gmq/actions/workflows/go.yml/badge.svg)](https://github.com/giant-stone/gmq/actions/workflows/go.yml)
-[![CodeQL](https://github.com/giant-stone/gmq/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/giant-stone/gmq/actions/workflows/codeql-analysis.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/giant-stone/gmq)](https://goreportcard.com/report/github.com/giant-stone/gmq)
-[![GoDoc](https://godoc.org/github.com/giant-stone/gmq?status.svg)](https://godoc.org/github.com/giant-stone/gmq)
 
-Build requirement: Go 1.20.
+## Features
 
-特性
+- Per-queue concurrency and custom consume intervals.
+- Message ID deduplication that survives success or failure within its configured window.
+- Redis, SQLite, and in-memory brokers behind a shared interface.
+- Failure history, pause/resume, statistics, and automatic cleanup.
+- Cron scheduling, handler middleware, and a Redis management CLI.
+- Generated gomock broker for application unit tests.
 
-- [x] 处理消息失败默认自动存档
-- [x] 支持暂停队列消费
-- [x] 支持类似 cron 定时任务
-- [x] 命令行队列管理工具
-- [x] 自定义消费速率
-- [x] 自定义时限内消息去重
-- [x] 中间件
-- [x] 测试覆盖核心逻辑
-- [x] 支持业务层通过 [gomock](https://github.com/golang/mock) 实现单元测试
+## Getting started
 
-功能和接口设计都参考了 [hibiken/asynq](https://github.com/hibiken/asynq) 实现，差异：
-
-- 默认支持自定义消费速率（自定义从队列取消息的时间间隔）
-  - 所有的消息队列都希望消费节点尽可能快，在某些场景下，我们希望实现自定义间隔消费消息——注意：不是重试，不是预定将来某个准确时刻!
-- 消息自动保证入队某个时间段内唯一，`client.Enqueue(msg, gmq.UniqueIn(time.Hour*12))` 即可——无论消费结果成功还是失败，约束在 UniqueIn 内都有效
-  - asynq 需要同时指定生成 TaskId、Unique、Retention 三个参数，但默认消费成功后 Unique 限制自动删除
-
-和其他消息队列差异：
-
-- 性能和可靠性不是首要考虑，**易用性、实用性、满足真正多样化场景需求放在第一优先考虑**
-
-## Quickstart
-
-安装 Go stable 版本（当前应为 1.17 或以上）后，创建项目目录，通过以下命令安装 gmq 库
+Use a supported stable Go release; the module declares Go 1.20.
 
 ```sh
-go get -u github.com/giant-stone/gmq
+go get github.com/giant-stone/gmq@latest
 ```
 
-实现一个最简单的消息队列生产-消费 demo：
+Follow the [complete quickstart](docs/getting-started.md) for a producer and consumer using SQLite without external services.
 
-```go
-package main
+## Documentation
 
-import (
-	"context"
-	"flag"
-	"time"
+See the [documentation index](docs/README.md) for features and comparisons, lifecycle,
+custom consume rates, custom brokers, operations, and testing with gomock.
+These guides update the [original wiki](https://github.com/giant-stone/gmq/wiki) for the current API.
+Runnable applications live under [examples](examples).
 
-	"github.com/giant-stone/go/glogging"
-	"github.com/giant-stone/go/gutil"
-
-	"github.com/giant-stone/gmq/gmq"
-)
-
-func main() {
-	const defaultDsn = "redis://127.0.0.1:6379/0"
-	var dsn string
-	flag.StringVar(&dsn, "d", defaultDsn, "data source name of redis")
-	flag.Parse()
-
-	// 初始化 glogging 打印日志，[glogging](https://github.com/giant-stone/go#custom-logging) 将集成格式化、自动切割、日志分级，满足大部分服务 99% 以上场景
-	glogging.Init([]string{"stdout"}, "debug")
-
-	broker, err := gmq.NewBrokerRedis(dsn, "")
-	gutil.ExitOnErr(err)
-
-	ctx := context.Background()
-	srv := gmq.NewServer(ctx, broker, &gmq.Config{Logger: glogging.Sugared})
-	mux := gmq.NewMux()
-
-	// 用一个子协程模拟实现消息队列生产者
-	cli, err := gmq.NewClientRedis(dsn)
-	gutil.ExitOnErr(err)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				{
-					// 如果不指定队列名，gmq 默认使用 gmq.DefaultQueueName
-					cli.Enqueue(ctx, &gmq.Msg{Payload: []byte(`{"data":"hello world"}`)})
-					time.Sleep(time.Millisecond * 500)
-				}
-			}
-		}
-	}()
-
-	// 设置消息消费者，mux 类似于 web 框架中常用的多路复用路由处理，
-	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
-	mux.Handle(gmq.DefaultQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
-		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
-		return nil
-	}))
-
-	if err := srv.Run(mux); err != nil {
-		glogging.Sugared.Fatal("srv.Run ", err)
-	}
-	glogging.Sugared.Debug("gmq server started")
-	select {}
-}
-
-```
-
-完整代码见 examples/push_msg/main.go .
-
-如果不加队列配置，默认全速消费，每个队列会生成和机器 CPU (`runtime.NumCPU()`)数量一致 workers
-
-    gmq - queue foo - worker a
-                    - worker b
-                    - ...
-        - queue bar - worker aa
-                    - worker bb
-                    - ...
-
-在某些场合下，我们希望只有一个 worker 并且按一定间隔从队列中消费消息，可以通过队列配置控制：
-
-```go
-	// ...
-	func workIntervalFunc() time.Duration {
-		return time.Second * time.Duration(3)
-	}
-
-	// ...
-
-	slowQueueName := "checkout"
-	srv := gmq.NewServer(ctx, broker, &gmq.Config{Logger: glogging.Sugared,
-		QueueConfigs: map[string]*gmq.QueueCfg{
-			// 队列名 - 队列配置
-			slowQueueName: gmq.NewQueueCfg(
-				gmq.OptQueueWorkerNum(1),                    // 配置限制队列只有一个 worker
-				gmq.OptWorkerWorkInterval(workIntervalFunc), // 配置限制队列消费间隔为每 3 秒从队列取一条消息
-			),
-		},
-	})
-
-	// ...
-```
-
-完整代码见 examples/queue_config/main.go .
-
-消费效果输出
-
-```
-2022-07-05T10:56:00.779+0800    DEBUG   workInterval/main.go:65 consume id=a8f39ae3-de80-40a2-bdf4-a6cbbcf7cf59 queue=default payload={"data":"hello world"}
-2022-07-05T10:56:01.794+0800    DEBUG   workInterval/main.go:65 consume id=077d0595-9e8c-4211-b450-86fd4215fe40 queue=default payload={"data":"hello world"}
-2022-07-05T10:56:01.797+0800    DEBUG   workInterval/main.go:65 consume id=4c361217-59bc-4058-88f2-6aff96f51373 queue=default payload={"data":"hello world"}
-2022-07-05T10:56:02.701+0800    DEBUG   workInterval/main.go:70 consume id=116b8e73-9a8c-4832-b14a-9efba742159f queue=checkout payload={"fullURI":"example.sample/123"}
-2022-07-05T10:56:02.813+0800    DEBUG   workInterval/main.go:65 consume id=6cc3331a-f054-4155-8b04-d57922ecb4c9 queue=default payload={"data":"hello world"}
-2022-07-05T10:56:02.815+0800    DEBUG   workInterval/main.go:65 consume id=0cb698e1-00ed-4353-9e00-a5102fa1f0cc queue=default payload={"data":"hello world"}
-2022-07-05T10:56:03.828+0800    DEBUG   workInterval/main.go:65 consume id=4e1db153-3177-4ffc-82f1-8f31c0a4dddf queue=default payload={"data":"hello world"}
-2022-07-05T10:56:03.833+0800    DEBUG   workInterval/main.go:65 consume id=d6cd0836-29df-448b-943a-0082d7bfe7fe queue=default payload={"data":"hello world"}
-2022-07-05T10:56:04.842+0800    DEBUG   workInterval/main.go:65 consume id=69569019-8448-47ef-9277-83ef85b4ef70 queue=default payload={"data":"hello world"}
-2022-07-05T10:56:04.844+0800    DEBUG   workInterval/main.go:65 consume id=2bd5db36-c13c-49de-abf7-26e2aad681df queue=default payload={"data":"hello world"}
-2022-07-05T10:56:05.712+0800    DEBUG   workInterval/main.go:70 consume id=9c1909f0-3f83-438e-8c98-c0dd7d7d1150 queue=checkout payload={"fullURI":"example.sample/123"}
-2022-07-05T10:56:05.852+0800    DEBUG   workInterval/main.go:65 consume id=9f5d7b9f-fbf1-48cf-8ccc-e626f198e72d queue=default payload={"data":"hello world"}
-2022-07-05T10:56:05.857+0800    DEBUG   workInterval/main.go:65 consume id=ccd2f9ae-4b74-4b92-9321-d65872ae7b36 queue=default payload={"data":"hello world"}
-// ...
-```
-
-default 队列无限制 worker 数量，每 500 毫秒 生产 1 条，消费无间隔，所以每秒消费 2 条 ~= 500 毫秒/条；
-checkout 队列限制 worker 一个，每 500 毫秒 生产 1 条，消费间隔 3 秒一条，所以每秒消费 0.33/条 ~= 3 秒/条，和期望一致。
-
-## Advanced Topics
-
-### SQLite broker
-
-Use SQLite for a persistent local queue without a Redis server or CGO:
-
-```go
-broker, err := gmq.NewBrokerSQLite("queue.db")
-if err != nil {
-	log.Fatal(err)
-}
-defer broker.Close()
-
-client, err := gmq.NewClientFromBroker(broker)
-if err != nil {
-	log.Fatal(err)
-}
-_, err = client.Enqueue(context.Background(), &gmq.Msg{
-	Id:      "daily-report",
-	Queue:   "reports",
-	Payload: []byte(`{"date":"2026-10-19"}`),
-})
-if err != nil {
-	log.Fatal(err)
-}
-
-// Pass broker to gmq.NewServer with the usual configuration and handlers.
-```
-
-`NewBrokerSQLite` accepts a database filename, a SQLite `file:` URI, or `:memory:`
-for an isolated temporary database. The parent directory must already exist.
-The constructor applies embedded SQL migrations in a transaction. Table schemas,
-migrations, and protobuf model definitions live under `schemas/`.
-
-The broker implements the full `Broker` interface: FIFO claims, deduplication,
-failure history, cleanup, persistent pause/resume, and daily/weekly statistics.
-File databases use SQLite WAL mode. Multiple broker instances can share a local database file; claims are atomic,
-and writes wait up to five seconds for another writer. Completed messages keep
-their ID reservation until the uniqueness deadline. Processing messages remain
-in that state after reopening; recovery requires explicit deletion and enqueueing.
-The existing command-line tool still connects to Redis.
-
-Run the SQLite tests without external services:
+## Development
 
 ```sh
-go test ./gmq -run TestBrokerSQLite -count=1
+make test
+make typecheck
+make format
+make spell
 ```
 
-更多功能见 [giant-stone/gmq/wiki](https://github.com/giant-stone/gmq/wiki)
-
-## Run tests
-
-run tests on Windows
-
-```
-set "GMQ_RDS=redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1"
-go test -v ./...
-```
-
-run tests on macOS/Linux
-
-```
-export GMQ_RDS="redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1"
-go test -v ./...
-```
-
-## Spell checking
-
-Run `make spell` or `npx --yes cspell lint --no-progress` to check the repository.
-Generated code and `go.sum` are excluded. Only add unrecognized dependency terms
-that occur in checked files; keep fixed protocol names in file-scoped exceptions.
-
-Naming cleanup: the old message expiration field is now `Msg.ExpiresAt`, the old queue configuration map is now
-`Config.QueueConfigs`, and the old Lua success constant is now `LuaReturnCodeSuccess`.
-The stored expiration field and existing CLI flags retain their original spelling.
+The equivalent test and analysis commands are `go test -timeout=5m ./...` and `go vet ./...`.
+Redis integration tests require `GMQ_RDS`; otherwise they skip.
+See [testing](docs/testing.md) for connection configuration, mock generation, and focused commands.

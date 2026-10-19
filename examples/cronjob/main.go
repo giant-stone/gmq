@@ -17,7 +17,7 @@ func main() {
 	flag.StringVar(&dsn, "d", defaultDsn, "data source name of redis")
 	flag.Parse()
 
-	// 初始化 glogging 打印日志，[glogging](https://github.com/giant-stone/go#custom-logging) 将集成格式化、自动切割、日志分级，满足大部分服务 99% 以上场景
+	// Initialize glogging with formatted output, log rotation, and log levels.
 	glogging.Init([]string{"stdout"}, "debug")
 
 	broker, err := gmq.NewBrokerRedis(dsn, "")
@@ -25,7 +25,7 @@ func main() {
 
 	ctx := context.Background()
 
-	// 消费者
+	// Consumer.
 	srv := gmq.NewServer(ctx, broker, &gmq.Config{Logger: glogging.Sugared})
 	mux := gmq.NewMux()
 	mux.Handle(gmq.DefaultQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
@@ -49,10 +49,9 @@ func main() {
 		Location: loc,
 	})
 
-	// 生产者
-	// cronSpec 支持两种常见格式
+	// Producer.
+	// cronSpec accepts standard five-field cron expressions and descriptors.
 	//  [cron](https://en.wikipedia.org/wiki/Cron)
-	//  [quartz-scheduler](http://www.quartz-scheduler.org/documentation/quartz-2.3.0/tutorials/tutorial-lesson-06.html)
 	cronSpec := "@every 500ms"
 	_, err = scheduler.Register(cronSpec, &gmq.Msg{Payload: []byte(`{"msg":"hello"}`)})
 	if err != nil {

@@ -21,7 +21,7 @@ func main() {
 	flag.StringVar(&dsn, "d", defaultDsn, "data source name of redis")
 	flag.Parse()
 
-	// 初始化 glogging 打印日志，[glogging](https://github.com/giant-stone/go#custom-logging) 将集成格式化、自动切割、日志分级，满足大部分服务 99% 以上场景
+	// Initialize glogging with formatted output, log rotation, and log levels.
 	glogging.Init([]string{"stdout"}, "debug")
 
 	broker, err := gmq.NewBrokerRedis(dsn, "")
@@ -32,16 +32,16 @@ func main() {
 	slowQueueName := "checkout"
 	srv := gmq.NewServer(ctx, broker, &gmq.Config{Logger: glogging.Sugared,
 		QueueConfigs: map[string]*gmq.QueueCfg{
-			// 队列名 - 队列配置
+			// Map queue names to their configurations.
 			slowQueueName: gmq.NewQueueCfg(
-				gmq.OptQueueWorkerNum(1),                    // 配置限制队列只有一个 worker
-				gmq.OptWorkerWorkInterval(workIntervalFunc), // 配置限制队列消费间隔为每 3 秒从队列取一条消息
+				gmq.OptQueueWorkerNum(1),                    // Use one worker for this queue.
+				gmq.OptWorkerWorkInterval(workIntervalFunc), // Consume one message every three seconds.
 			),
 		},
 	})
 	mux := gmq.NewMux()
 
-	// 用一个子协程模拟实现消息队列生产者
+	// Simulate a message producer in a goroutine.
 	cli, err := gmq.NewClientRedis(dsn, "")
 	gutil.ExitOnErr(err)
 	go func() {
@@ -51,7 +51,7 @@ func main() {
 				return
 			default:
 				{
-					// 如果不指定队列名，gmq 默认使用 gmq.DefaultQueueName
+					// Use gmq.DefaultQueueName when no queue name is specified.
 					cli.Enqueue(ctx, &gmq.Msg{Payload: []byte(`{"data":"hello world"}`)})
 					cli.Enqueue(ctx, &gmq.Msg{Payload: []byte(`{"fullURI":"example.sample/123"}`)}, gmq.OptQueueName(slowQueueName))
 					time.Sleep(time.Millisecond * 500)
@@ -60,8 +60,8 @@ func main() {
 		}
 	}()
 
-	// 设置消息消费者，mux 类似于 web 框架中常用的多路复用路由处理，
-	// 消费消息以队列名为 pattern，handler 为 gmq.HandlerFunc 类型函数
+	// Register a consumer with mux, similar to routing in a web framework.
+	// Use the queue name as the pattern and gmq.HandlerFunc as the handler.
 	mux.Handle(gmq.DefaultQueueName, gmq.HandlerFunc(func(ctx context.Context, msg gmq.IMsg) (err error) {
 		glogging.Sugared.Debugf("consume id=%s queue=%s payload=%s", msg.GetId(), msg.GetQueue(), string(msg.GetPayload()))
 		return nil

@@ -40,4 +40,4 @@ typecheck:
 
 format:
 	gofmt -w gmq examples internal schemas
-	npx --yes prettier --write cspell.config.yaml prettier.config.cjs
+	npx --yes prettier --write cspell.config.yaml prettier.config.cjs README.md "docs/**/*.md"

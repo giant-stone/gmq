@@ -19,23 +19,23 @@ const (
 	queueName          = "crawlIMDB"
 	IMDBPrefix         = "https://imdb.com"
 	Source             = "IMDB"
-	UniqueIn           = 60 * 60 * 24 // seconds ， 防止重复入队
-	ProcessingInterval = 10           // seconds ， 处理间隔，避免IP被封
+	UniqueIn           = 60 * 60 * 24 // seconds; prevent duplicate enqueueing
+	ProcessingInterval = 10           // seconds; space requests to reduce the risk of IP blocking
 )
 
 func RunCrawlClient(ctx context.Context, broker gmq.Broker) {
-	// 创建客户端
+	// Create the client.
 	cli, err := gmq.NewClientFromBroker(broker)
 	gutil.ExitOnErr(err)
 
-	// 爬取数据
+	// Fetch the chart page.
 	resp, err := http.Get("http://imdb.com/chart/top")
 	gutil.ExitOnErr(err)
 	doc, err := html.Parse(resp.Body)
 	gutil.ExitOnErr(err)
 	resp.Body.Close()
 
-	// 解析链接
+	// Parse detail page links.
 	re := regexp.MustCompile(`ref_=chttp_tt_.*`)
 	var visitNodes func(*html.Node)
 	detailsPages := map[int]string{}
@@ -54,7 +54,7 @@ func RunCrawlClient(ctx context.Context, broker gmq.Broker) {
 
 	forEachNode(doc, visitNodes)
 
-	// 消息入队
+	// Enqueue messages.
 	for i := 1; i <= 250; i++ {
 		dp, has := detailsPages[i]
 		if !has {
@@ -64,7 +64,7 @@ func RunCrawlClient(ctx context.Context, broker gmq.Broker) {
 	}
 }
 
-// 创建消息
+// Create a message.
 func imdbMsg(url string, topIndex int) *gmq.Msg {
 	return &gmq.Msg{
 		Payload: []byte(fmt.Sprintf("{%s: %s}", strconv.Quote("url"), strconv.Quote(url))),
