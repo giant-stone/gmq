@@ -1,53 +1,18 @@
 package gmq
 
-import (
-	"context"
+import "context"
 
-	"github.com/bwmarrin/snowflake"
-)
-
+// IHandler processes a message. Implementations own any dependencies they need.
 type IHandler interface {
 	ProcessMsg(ctx context.Context, msg IMsg) error
-
-	// Implement the following methods to control time and unique identifier changes and implement mocking testing.
-	SetClock(c Clock)
-	SetIdGenerator(v IdGenerator)
 }
 
+// HandlerFunc adapts a function to IHandler.
 type HandlerFunc func(ctx context.Context, msg IMsg) error
 
-// SetClock implements IHandler.
-func (fn HandlerFunc) SetClock(c Clock) {
-	panic("unimplemented")
-}
-
-// SetIdGenerator implements IHandler.
-func (fn HandlerFunc) SetIdGenerator(v IdGenerator) {
-	panic("unimplemented")
-}
-
-// ProcessMsg calls fn(ctx, task)
+// ProcessMsg calls fn with the message and its processing context.
 func (fn HandlerFunc) ProcessMsg(ctx context.Context, msg IMsg) error {
 	return fn(ctx, msg)
 }
 
-type IdGenerator interface {
-	Generate() snowflake.ID
-}
-
-type Handler struct {
-	Clock       Clock
-	IdGenerator IdGenerator
-}
-
-func (it *Handler) SetClock(c Clock) {
-	it.Clock = c
-}
-
-func (it *Handler) SetIdGenerator(v IdGenerator) {
-	it.IdGenerator = v
-}
-
-func (it *Handler) ProcessMsg(ctx context.Context, msg IMsg) (err error) {
-	panic("unimplemented")
-}
+var _ IHandler = HandlerFunc(nil)

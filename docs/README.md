@@ -10,6 +10,7 @@ The wiki's gomock page was a placeholder; the testing guide adds a runnable exam
 - [Built-in and custom brokers](brokers.md)
 - [Scheduling and operations](operations.md)
 - [Testing with gomock](testing.md)
+- [Pre-v1 API migration](api-migration.md)
 
 The [crawler example](../examples/crawl) demonstrates pacing and stable IDs.
 Its HTML parser depends on the external site's markup.

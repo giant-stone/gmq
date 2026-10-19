@@ -47,9 +47,22 @@ if err != nil {
 server := gmq.NewServer(ctx, customBroker, config)
 ```
 
-`BrokerUnimplemented` is a legacy helper: some signatures differ from `Broker` and some methods are absent.
-Embedding it alone does not satisfy the current interface.
-Do not leave methods returning `ErrNotImplemented` when the runtime needs them.
+For a custom broker that supports a subset of operations, embed `BrokerUnimplemented` by value:
+
+```go
+type CustomBroker struct {
+    gmq.BrokerUnimplemented
+}
+
+// Override the operations your application uses.
+```
+
+The helper satisfies `Broker`. Unsupported operations return errors wrapping
+`ErrNotImplemented` with the method name; check them using `errors.Is`.
+`Close` returns `nil`, while `SetClock` and `UTC` do nothing. Override these defaults
+when your broker owns resources or supports time configuration. Embedding does not
+provide storage behavior or guarantee compatibility with future interface changes.
+Implement every operation reached by your application's runtime path.
 Workers call `Init`, `Dequeue`, `Complete`, and `Fail`; the cleaner calls `DeleteAgo`;
 server controls call `Pause`, `Resume`, and `Close`. Management tools need the corresponding inspection methods.
 

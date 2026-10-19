@@ -17,8 +17,6 @@ const (
 type MsgHistory map[string]*list.List // key is <msgId>, value is <msg>
 
 type BrokerInMemory struct {
-	BrokerUnimplemented
-
 	clock Clock
 
 	failedHistory map[string]MsgHistory // key is <queueName>
@@ -688,3 +686,5 @@ func NewBrokerInMemory(opts *BrokerInMemoryOpts) (rs Broker, err error) {
 	}
 	return broker, nil
 }
+
+var _ Broker = (*BrokerInMemory)(nil)

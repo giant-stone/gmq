@@ -59,7 +59,7 @@ func (it *Server) Run(mux *Mux) (err error) {
 	}
 
 	// pattern name is also queue name
-	for queueName := range patterns {
+	for _, queueName := range patterns {
 		queueCfg, ok := it.cfg.QueueConfigs[queueName]
 		params := ProcessorParams{
 			Ctx:         it.ctx,

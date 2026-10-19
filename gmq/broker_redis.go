@@ -94,8 +94,6 @@ func MakeRedisUniversalClient(opts *redis.Options) (rs interface{}) {
 }
 
 type BrokerRedis struct {
-	BrokerUnimplemented
-
 	cli       redis.UniversalClient
 	clock     Clock
 	namespace string
@@ -986,3 +984,5 @@ func NewClientRedis(dsn, ns string) (rs *Client, err error) {
 
 	return &Client{Broker: broker}, nil
 }
+
+var _ Broker = (*BrokerRedis)(nil)
