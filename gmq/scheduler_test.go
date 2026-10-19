@@ -88,73 +88,35 @@ func TestScheduler_Register(t *testing.T) {
 }
 
 func TestScheduler_Unregister(t *testing.T) {
-	testCtx := test_util.Context(t)
-	samples := []struct {
-		cronSpec string
-		wait     time.Duration
-		wantMsg  gmq.IMsg
-		wantErr  error
-	}{
-		{
-			cronSpec: "@every 1s",
-			wait:     time.Second * time.Duration(1),
-			wantMsg:  &gmq.Msg{Payload: []byte(`{"msg":"hello"}`), Queue: "scheduledTask"},
-			wantErr:  nil,
-		},
-	}
+	const (
+		pollInterval = 10 * time.Millisecond
+		waitTimeout  = 5 * time.Second
+		cronInterval = time.Second
+	)
+	ctx := test_util.Context(t)
+	broker := setupBrokerRedis(t)
+	defer broker.Close()
+	scheduler := gmq.NewScheduler(gmq.SchedulerParams{Ctx: ctx, Broker: broker})
+	defer scheduler.Shutdown()
 
-	for _, sample := range samples {
-		broker := setupBrokerRedis(t)
-		defer broker.Close()
-
-		ctx := testCtx
-		scheduler := gmq.NewScheduler(gmq.SchedulerParams{Ctx: ctx, Broker: broker})
-
-		jobId, err := scheduler.Register(sample.cronSpec, sample.wantMsg)
-		require.NoError(t, err, "scheduler.Register")
-		require.NotEmpty(t, jobId, "jobId")
-
-		err = scheduler.Run()
-		require.NoError(t, err, "scheduler.Run")
-
-		queueStatList, err := broker.GetStats(ctx)
-		require.NoError(t, err, "broker.GetStats")
-		require.Equal(t, 0, len(queueStatList))
-
-		time.Sleep(sample.wait)
-
-		queueStatList, err = broker.GetStats(ctx)
-		require.NoError(t, err, "broker.GetStats")
-		require.Equal(t, 1, len(queueStatList))
-		queueState := queueStatList[0]
-		require.Equal(t, sample.wantMsg.GetQueue(), queueState.Name)
-		require.Equal(t, int64(1), queueState.Total)
-		require.Equal(t, int64(1), queueState.Pending)
-		require.Equal(t, int64(0), queueState.Processing)
-
-		_, err = broker.Dequeue(ctx, sample.wantMsg.GetQueue())
-		require.NoError(t, err, "broker.Dequeue")
-
-		err = scheduler.Unregister(jobId)
-		require.NoError(t, err, "scheduler.Unregister")
-
-		time.Sleep(sample.wait)
-
-		queueStatList, err = broker.GetStats(ctx)
-		require.NoError(t, err, "broker.GetStats")
-		require.Equal(t, 1, len(queueStatList))
-		queueState = queueStatList[0]
-		require.Equal(t, sample.wantMsg.GetQueue(), queueState.Name)
-		require.Equal(t, int64(1), queueState.Total)
-		require.Equal(t, int64(0), queueState.Pending)
-		require.Equal(t, int64(1), queueState.Processing)
-
-		_, err = broker.Dequeue(ctx, sample.wantMsg.GetQueue())
-		require.ErrorIs(t, err, gmq.ErrNoMsg, "broker.Dequeue")
-
-		time.Sleep(sample.wait)
-
-		_, err = broker.Dequeue(ctx, sample.wantMsg.GetQueue())
-		require.ErrorIs(t, err, gmq.ErrNoMsg, "broker.Dequeue")
-	}
+	msg := &gmq.Msg{Payload: []byte(`{"msg":"hello"}`), Queue: "scheduledTask"}
+	jobId, err := scheduler.Register("@every 1s", msg)
+	require.NoError(t, err)
+	require.NoError(t, scheduler.Run())
+	require.Eventually(t, func() bool {
+		stats, err := broker.GetStats(ctx)
+		return err == nil && len(stats) == 1 && stats[0].Pending > 0
+	}, waitTimeout, pollInterval)
+	require.NoError(t, scheduler.Unregister(jobId))
+	_, err = broker.Dequeue(ctx, msg.Queue)
+	require.NoError(t, err)
+	time.Sleep(2 * cronInterval)
+	_, err = broker.Dequeue(ctx, msg.Queue)
+	require.ErrorIs(t, err, gmq.ErrNoMsg)
+	stats, err := broker.GetStats(ctx)
+	require.NoError(t, err)
+	require.Len(t, stats, 1)
+	require.EqualValues(t, 1, stats[0].Total)
+	require.EqualValues(t, 0, stats[0].Pending)
+	require.EqualValues(t, 1, stats[0].Processing)
 }

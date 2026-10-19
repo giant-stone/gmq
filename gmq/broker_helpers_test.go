@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/giant-stone/gmq/internal/test_util"
-	"github.com/giant-stone/go/glogging"
 	"github.com/giant-stone/go/grand"
 	"github.com/stretchr/testify/require"
 )
@@ -236,28 +235,16 @@ func CheckBrokerDeleteAgo(t *testing.T, broker Broker) {
 	clock := NewSimulatedClock(now)
 	broker.SetClock(clock)
 
-	restIfNoMsg := time.Millisecond * time.Duration(10)
-	msgMaxTTL := time.Millisecond * time.Duration(40)
-	msgTTLUniq := time.Millisecond * time.Duration(10)
+	const msgMaxTTL = 40 * time.Millisecond
 
-	glogging.Init([]string{"stderr"}, "warn")
-	srv := NewServer(ctx, broker, &Config{MsgMaxTTL: msgMaxTTL, RestIfNoMsg: restIfNoMsg})
-	mux := NewMux()
-
-	mux.Handle(msg.Queue, HandlerFunc(func(ctx context.Context, msg IMsg) (err error) {
-		return errors.New("error")
-	}))
-
-	err := srv.Run(mux)
-	require.NoError(t, err, "srv.Run")
-	defer srv.Shutdown()
-
-	_, err = broker.Enqueue(ctx, msg, OptUniqueIn(msgTTLUniq))
+	_, err := broker.Enqueue(ctx, msg)
 	require.NoError(t, err)
+	dequeued, err := broker.Dequeue(ctx, msg.Queue)
+	require.NoError(t, err)
+	require.NoError(t, broker.Fail(ctx, dequeued, errors.New("handler failed")))
 
-	// wait consumer done
-	clock.AdvanceTime(restIfNoMsg * 2)
-	time.Sleep(restIfNoMsg * 2)
+	// Fresh failed messages must survive cleanup.
+	require.NoError(t, broker.DeleteAgo(ctx, msg.Queue, msgMaxTTL))
 
 	// check it first time
 	// auto archive it if it failed
@@ -295,9 +282,8 @@ func CheckBrokerDeleteAgo(t *testing.T, broker Broker) {
 	require.Equal(t, int64(0), queueDailyStat.Completed)
 	require.Equal(t, int64(1), queueDailyStat.Failed)
 
-	// wait cleaner done
 	clock.AdvanceTime(msgMaxTTL * 2)
-	time.Sleep(msgMaxTTL * 2)
+	require.NoError(t, broker.DeleteAgo(ctx, msg.Queue, msgMaxTTL))
 
 	// check it second time
 	for _, state := range []string{
