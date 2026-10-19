@@ -3,12 +3,12 @@ module github.com/giant-stone/gmq
 go 1.20
 
 require (
-	github.com/giant-stone/go v1.0.1
+	github.com/giant-stone/go v1.1.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.6.0
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	golang.org/x/net v0.35.0
 	golang.org/x/time v0.10.0
 	modernc.org/sqlite v1.29.0
