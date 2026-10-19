@@ -14,6 +14,10 @@ Stop producers and schedulers before shutting down a server that shares their br
 
 ## SQLite
 
+The SQLite driver is pinned to `modernc.org/sqlite v1.29.0` with `modernc.org/libc v1.41.0`
+to retain Go 1.20 support without CGO. Validate dependency upgrades with Go 1.20 and
+`CGO_ENABLED=0`, including a Linux build.
+
 `NewBrokerSQLite` accepts a filename, SQLite `file:` URI, or `:memory:` for an isolated temporary database.
 Create the parent directory first. Embedded migrations run in a transaction;
 models, schemas, and migrations live under [schemas](../schemas).
