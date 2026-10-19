@@ -44,6 +44,20 @@ Register middleware before starting workers:
 mux.Use(gmq.LoggingElapsed)
 ```
 
+To warn when a handler takes at least a configured duration, use this instead:
+
+```go
+mux.Use(gmq.LoggingElapsedWithThreshold(logger, 2*time.Second))
+```
+
+Pass the same logger as `Config.Logger`, or `nil` to use the initialized default logger.
+Successful handlers below the threshold log at Debug; those at or above it log at Warn.
+Failures always log one Warn with the error, elapsed time, and whether they were slow.
+A threshold of zero or less disables slow detection. Only handler execution is timed;
+queue waiting, broker operations, and worker interval waits are excluded. The threshold
+does not cancel handlers or change their returned errors. Logs include queue and message
+ID without the message payload. Register only one elapsed logging middleware to avoid duplicate logs.
+
 Custom middleware has type `func(gmq.IHandler) gmq.IHandler`.
 Wrap `next.ProcessMsg(ctx, msg)` in a `gmq.HandlerFunc` to add instrumentation or validation.
 Middleware runs in registration order. Preserve errors so failures reach the broker.
