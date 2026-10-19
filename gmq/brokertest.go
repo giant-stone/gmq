@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/giant-stone/gmq/internal/testutil"
 	"github.com/giant-stone/go/glogging"
 	"github.com/giant-stone/go/grand"
 	"github.com/stretchr/testify/require"
@@ -25,6 +26,7 @@ func GenerateNewMsg() *Msg {
 }
 
 func TestBroker_Enqueue(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
@@ -33,7 +35,7 @@ func TestBroker_Enqueue(t *testing.T, broker Broker) {
 	broker.SetClock(clock)
 
 	msgWant := GenerateNewMsg()
-	msgGot, err := broker.Enqueue(context.Background(), msgWant)
+	msgGot, err := broker.Enqueue(testCtx, msgWant)
 	require.NoError(t, err)
 
 	require.Equal(t, msgWant.GetId(), msgGot.Id)
@@ -47,6 +49,7 @@ func TestBroker_Enqueue(t *testing.T, broker Broker) {
 }
 
 func TestBroker_GetMsg(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
@@ -55,12 +58,12 @@ func TestBroker_GetMsg(t *testing.T, broker Broker) {
 	broker.SetClock(clock)
 
 	msgWant := GenerateNewMsg()
-	msgReturn, err := broker.Enqueue(context.Background(), msgWant)
+	msgReturn, err := broker.Enqueue(testCtx, msgWant)
 	require.NoError(t, err)
 	gotPayload := msgReturn.GetPayload()
 	require.Equal(t, msgWant.GetPayload(), gotPayload)
 
-	msgGot, err := broker.GetMsg(context.Background(), msgWant.GetQueue(), msgWant.GetId())
+	msgGot, err := broker.GetMsg(testCtx, msgWant.GetQueue(), msgWant.GetId())
 	require.NoError(t, err)
 
 	require.Equal(t, msgWant.GetId(), msgGot.Id)
@@ -74,6 +77,7 @@ func TestBroker_GetMsg(t *testing.T, broker Broker) {
 }
 
 func TestBroker_Dequeue(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
@@ -90,10 +94,10 @@ func TestBroker_Dequeue(t *testing.T, broker Broker) {
 	dat, _ := json.Marshal(p)
 	msgWant := &Msg{Payload: dat, Id: id}
 
-	_, err := broker.Enqueue(context.Background(), msgWant)
+	_, err := broker.Enqueue(testCtx, msgWant)
 	require.NoError(t, err)
 
-	msgGot, err := broker.Dequeue(context.Background(), DefaultQueueName)
+	msgGot, err := broker.Dequeue(testCtx, DefaultQueueName)
 	require.NoError(t, err)
 
 	require.Equal(t, msgWant.GetId(), msgGot.Id)
@@ -107,11 +111,12 @@ func TestBroker_Dequeue(t *testing.T, broker Broker) {
 }
 
 func TestBroker_DeleteMsg(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
 	msgWant := GenerateNewMsg()
-	ctx := context.Background()
+	ctx := testCtx
 
 	_, err := broker.Enqueue(ctx, msgWant)
 	require.NoError(t, err)
@@ -128,11 +133,12 @@ func TestBroker_DeleteMsg(t *testing.T, broker Broker) {
 }
 
 func TestBroker_DeleteQueue(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
 	msgWant := GenerateNewMsg()
-	ctx := context.Background()
+	ctx := testCtx
 
 	_, err := broker.Enqueue(ctx, msgWant)
 	require.NoError(t, err)
@@ -147,105 +153,76 @@ func TestBroker_DeleteQueue(t *testing.T, broker Broker) {
 	_, err = broker.GetMsg(ctx, msgWant.GetQueue(), msgWant.GetId())
 	require.ErrorIs(t, err, ErrNoMsg)
 
-	_, err = broker.Dequeue(context.Background(), msgWant.GetQueue())
+	_, err = broker.Dequeue(testCtx, msgWant.GetQueue())
 	require.ErrorIs(t, err, ErrNoMsg)
 }
 
 func TestBroker_ListMsg(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
-	now := time.Now()
-	clock := NewSimulatedClock(now)
-	broker.SetClock(clock)
-
+	ctx := testCtx
 	queueName := grand.String(10)
+	require.NoError(t, broker.Init(ctx, queueName))
+
+	assertState := func(state string, want []string) {
+		t.Helper()
+		got, err := broker.ListMsg(ctx, queueName, state, DefaultMaxItemsLimit, 0)
+		require.NoError(t, err)
+		require.Equal(t, want, got, "message state %s", state)
+	}
+
 	msgFail := GenerateNewMsg()
 	msgFail.Queue = queueName
-	msgFail.Payload = []byte(`fail`)
+	_, err := broker.Enqueue(ctx, msgFail)
+	require.NoError(t, err)
+	assertState(MsgStatePending, []string{msgFail.Id})
+	assertState(MsgStateProcessing, []string{})
+	assertState(MsgStateFailed, []string{})
+
+	failed, err := broker.Dequeue(ctx, queueName)
+	require.NoError(t, err)
+	require.Equal(t, msgFail.Id, failed.Id)
+	assertState(MsgStatePending, []string{})
+	assertState(MsgStateProcessing, []string{msgFail.Id})
+	require.NoError(t, broker.Fail(ctx, failed, errors.New("fail")))
+	assertState(MsgStateFailed, []string{msgFail.Id})
+	assertState(MsgStatePending, []string{})
+	assertState(MsgStateProcessing, []string{})
 
 	msgSucc := GenerateNewMsg()
 	msgSucc.Queue = queueName
-	msgSucc.Payload = []byte(`succ`)
+	_, err = broker.Enqueue(ctx, msgSucc)
+	require.NoError(t, err)
+	completed, err := broker.Dequeue(ctx, queueName)
+	require.NoError(t, err)
+	require.Equal(t, msgSucc.Id, completed.Id)
+	require.NoError(t, broker.Complete(ctx, completed))
+	assertState(MsgStateFailed, []string{msgFail.Id})
+	assertState(MsgStatePending, []string{})
+	assertState(MsgStateProcessing, []string{})
 
 	msgProcessing := GenerateNewMsg()
 	msgProcessing.Queue = queueName
-	msgProcessing.Payload = []byte(`processing`)
-
-	ctx := context.Background()
-	// ctx, cancel := context.WithCancel(context.Background())
-	// defer cancel()
-
-	restIfNoMsg := time.Duration(10) * time.Millisecond
-	glogging.Init([]string{"stderr"}, "warn")
-	srv := NewServer(ctx, broker, &Config{RestIfNoMsg: restIfNoMsg, MsgMaxTTL: time.Minute, Logger: glogging.Sugared})
-	mux := NewMux()
-	mux.Handle(queueName, HandlerFunc(func(ctx context.Context, msg IMsg) (err error) {
-		p := string(msg.GetPayload())
-		if p == "fail" {
-			return errors.New("fail")
-		} else if p == "succ" {
-			return nil
-		} else if p == "processing" {
-			time.Sleep(time.Minute)
-		}
-		return nil
-	}))
-
-	err := srv.Run(mux)
-	require.NoError(t, err)
-
-	_, err = broker.Enqueue(ctx, msgFail)
-	require.NoError(t, err)
-	// wait consumer done
-	clock.AdvanceTime(restIfNoMsg * 2)
-	time.Sleep(restIfNoMsg * 2)
-
-	msgIds, _ := broker.ListMsg(ctx, queueName, MsgStateFailed, DefaultMaxItemsLimit, 0)
-	require.Equal(t, 1, len(msgIds))
-	require.Equal(t, msgFail.Id, msgIds[0])
-	msgIds, _ = broker.ListMsg(ctx, queueName, MsgStatePending, DefaultMaxItemsLimit, 0)
-	require.Equal(t, 0, len(msgIds))
-	msgIds, _ = broker.ListMsg(ctx, queueName, MsgStateProcessing, DefaultMaxItemsLimit, 0)
-	require.Equal(t, 0, len(msgIds))
-
-	_, err = broker.Enqueue(ctx, msgSucc)
-	require.NoError(t, err)
-	// wait consumer done
-	clock.AdvanceTime(restIfNoMsg * 2)
-	time.Sleep(restIfNoMsg * 2)
-
-	msgIds, _ = broker.ListMsg(ctx, queueName, MsgStateFailed, DefaultMaxItemsLimit, 0)
-	require.Equal(t, 1, len(msgIds))
-	require.Equal(t, msgFail.Id, msgIds[0])
-	msgIds, _ = broker.ListMsg(ctx, queueName, MsgStatePending, DefaultMaxItemsLimit, 0)
-	require.Equal(t, 0, len(msgIds))
-	msgIds, _ = broker.ListMsg(ctx, queueName, MsgStateProcessing, DefaultMaxItemsLimit, 0)
-	require.Equal(t, 0, len(msgIds))
-
 	_, err = broker.Enqueue(ctx, msgProcessing)
 	require.NoError(t, err)
-	// wait consumer done
-	clock.AdvanceTime(restIfNoMsg * 2)
-	time.Sleep(restIfNoMsg * 2)
-
-	msgIds, _ = broker.ListMsg(ctx, queueName, MsgStateFailed, DefaultMaxItemsLimit, 0)
-	require.Equal(t, 1, len(msgIds))
-	require.Equal(t, msgFail.Id, msgIds[0])
-	msgIds, _ = broker.ListMsg(ctx, queueName, MsgStatePending, DefaultMaxItemsLimit, 0)
-	require.Equal(t, 0, len(msgIds))
-	msgIds, _ = broker.ListMsg(ctx, queueName, MsgStateProcessing, DefaultMaxItemsLimit, 0)
-	require.Equal(t, 1, len(msgIds))
-	require.Equal(t, msgProcessing.Id, msgIds[0])
+	processing, err := broker.Dequeue(ctx, queueName)
+	require.NoError(t, err)
+	require.Equal(t, msgProcessing.Id, processing.Id)
+	assertState(MsgStateFailed, []string{msgFail.Id})
+	assertState(MsgStatePending, []string{})
+	assertState(MsgStateProcessing, []string{msgProcessing.Id})
 }
 
 func TestBroker_DeleteAgo(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
 	msg := GenerateNewMsg()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(testCtx)
 	defer cancel()
 
 	now := time.Now()
@@ -355,6 +332,7 @@ func toListQueueNames(queueStats []*QueueStat) []string {
 }
 
 func TestBroker_Complete(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
@@ -363,7 +341,7 @@ func TestBroker_Complete(t *testing.T, broker Broker) {
 	broker.SetClock(clock)
 
 	msgWant := GenerateNewMsg()
-	ctx := context.Background()
+	ctx := testCtx
 
 	_, err := broker.Enqueue(ctx, msgWant)
 	require.NoError(t, err)
@@ -409,6 +387,7 @@ func TestBroker_Complete(t *testing.T, broker Broker) {
 }
 
 func TestBroker_Fail(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
@@ -417,7 +396,7 @@ func TestBroker_Fail(t *testing.T, broker Broker) {
 	broker.SetClock(clock)
 
 	msgWant := GenerateNewMsg()
-	ctx := context.Background()
+	ctx := testCtx
 
 	_, err := broker.Enqueue(ctx, msgWant)
 	require.NoError(t, err)
@@ -480,10 +459,11 @@ func TestBroker_Fail(t *testing.T, broker Broker) {
 }
 
 func TestBroker_ListFailed(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
-	ctx := context.Background()
+	ctx := testCtx
 
 	now := time.Now()
 	clock := NewSimulatedClock(now)
@@ -547,10 +527,11 @@ func TestBroker_ListFailed(t *testing.T, broker Broker) {
 }
 
 func TestBroker_ListFailedMaxItems(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
-	ctx := context.Background()
+	ctx := testCtx
 
 	now := time.Now()
 	clock := NewSimulatedClock(now)
@@ -584,10 +565,11 @@ func TestBroker_ListFailedMaxItems(t *testing.T, broker Broker) {
 }
 
 func TestBroker_ListQueue(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
-	ctx := context.Background()
+	ctx := testCtx
 	msg1 := GenerateNewMsg()
 	broker.Enqueue(ctx, msg1)
 	msg2 := GenerateNewMsg()
@@ -596,7 +578,7 @@ func TestBroker_ListQueue(t *testing.T, broker Broker) {
 	broker.Enqueue(ctx, msg3)
 
 	m := map[string]struct{}{}
-	queues, err := broker.ListQueue(context.Background())
+	queues, err := broker.ListQueue(testCtx)
 	require.NoError(t, err)
 	for _, item := range queues {
 		m[item] = struct{}{}
@@ -612,6 +594,7 @@ func TestBroker_ListQueue(t *testing.T, broker Broker) {
 }
 
 func TestBroker_GetStats(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
@@ -626,37 +609,16 @@ func TestBroker_GetStats(t *testing.T, broker Broker) {
 	msgProcessing.Queue = msgFail.Queue
 	msgProcessing.Payload = []byte(`processing`)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	now := time.Now()
-	clock := NewSimulatedClock(now)
-	broker.SetClock(clock)
-
-	restIfNoMsg := time.Duration(10) * time.Millisecond
-	glogging.Init([]string{"stderr"}, "warn")
-	srv := NewServer(ctx, broker, &Config{RestIfNoMsg: restIfNoMsg, MsgMaxTTL: time.Minute, Logger: glogging.Sugared})
-	mux := NewMux()
-	mux.Handle(msgFail.Queue, HandlerFunc(func(ctx context.Context, msg IMsg) (err error) {
-		p := string(msg.GetPayload())
-		if p == "fail" {
-			return errors.New("fail")
-		} else if p == "succ" {
-			return nil
-		} else if p == "processing" {
-			time.Sleep(time.Minute)
-		}
-		return nil
-	}))
-
-	err := srv.Run(mux)
-	require.NoError(t, err, "srv.Run")
+	ctx := testCtx
+	require.NoError(t, broker.Init(ctx, msgFail.Queue))
+	var err error
 
 	_, err = broker.Enqueue(ctx, msgFail)
 	require.NoError(t, err)
-	// wait consumer done
-	clock.AdvanceTime(restIfNoMsg * 2)
-	time.Sleep(restIfNoMsg * 2)
+	dequeued, err := broker.Dequeue(ctx, msgFail.Queue)
+	require.NoError(t, err)
+	require.Equal(t, msgFail.Id, dequeued.Id)
+	require.NoError(t, broker.Fail(ctx, dequeued, errors.New("fail")))
 
 	queueStats, err := broker.GetStats(ctx)
 	require.NoError(t, err)
@@ -668,9 +630,10 @@ func TestBroker_GetStats(t *testing.T, broker Broker) {
 
 	_, err = broker.Enqueue(ctx, msgSucc)
 	require.NoError(t, err)
-	// wait consumer done
-	clock.AdvanceTime(restIfNoMsg * 2)
-	time.Sleep(restIfNoMsg * 2)
+	dequeued, err = broker.Dequeue(ctx, msgSucc.Queue)
+	require.NoError(t, err)
+	require.Equal(t, msgSucc.Id, dequeued.Id)
+	require.NoError(t, broker.Complete(ctx, dequeued))
 
 	queueStats, err = broker.GetStats(ctx)
 	require.NoError(t, err)
@@ -682,9 +645,9 @@ func TestBroker_GetStats(t *testing.T, broker Broker) {
 
 	_, err = broker.Enqueue(ctx, msgProcessing)
 	require.NoError(t, err)
-	// wait consumer done
-	clock.AdvanceTime(restIfNoMsg * 2)
-	time.Sleep(restIfNoMsg * 2)
+	dequeued, err = broker.Dequeue(ctx, msgProcessing.Queue)
+	require.NoError(t, err)
+	require.Equal(t, msgProcessing.Id, dequeued.Id)
 
 	queueStats, err = broker.GetStats(ctx)
 	require.NoError(t, err)
@@ -696,6 +659,7 @@ func TestBroker_GetStats(t *testing.T, broker Broker) {
 }
 
 func TestBroker_GetStatsByDate(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
@@ -712,44 +676,30 @@ func TestBroker_GetStatsByDate(t *testing.T, broker Broker) {
 	msgProcessing.Queue = queueName
 	msgProcessing.Payload = []byte(`processing`)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	now := time.Now()
-	clock := NewSimulatedClock(now)
-	broker.SetClock(clock)
-
-	restIfNoMsg := time.Duration(10) * time.Millisecond
-	glogging.Init([]string{"stderr"}, "warn")
-	srv := NewServer(ctx, broker, &Config{RestIfNoMsg: restIfNoMsg, MsgMaxTTL: time.Minute, Logger: glogging.Sugared})
-	mux := NewMux()
-	mux.Handle(msgFail.Queue, HandlerFunc(func(ctx context.Context, msg IMsg) (err error) {
-		p := string(msg.GetPayload())
-		if p == "fail" {
-			return errors.New("fail")
-		} else if p == "succ" {
-			return nil
-		} else if p == "processing" {
-			time.Sleep(time.Minute)
-		}
-		return nil
-	}))
-
-	err := srv.Run(mux)
-	require.NoError(t, err, "srv.Run")
+	ctx := testCtx
+	require.NoError(t, broker.Init(ctx, msgFail.Queue))
+	var err error
 
 	_, err = broker.Enqueue(ctx, msgFail)
 	require.NoError(t, err)
+	dequeued, err := broker.Dequeue(ctx, msgFail.Queue)
+	require.NoError(t, err)
+	require.Equal(t, msgFail.Id, dequeued.Id)
+	require.NoError(t, broker.Fail(ctx, dequeued, errors.New("fail")))
 	_, err = broker.Enqueue(ctx, msgSucc)
 	require.NoError(t, err)
+	dequeued, err = broker.Dequeue(ctx, msgSucc.Queue)
+	require.NoError(t, err)
+	require.Equal(t, msgSucc.Id, dequeued.Id)
+	require.NoError(t, broker.Complete(ctx, dequeued))
 	_, err = broker.Enqueue(ctx, msgProcessing)
 	require.NoError(t, err)
+	dequeued, err = broker.Dequeue(ctx, msgProcessing.Queue)
+	require.NoError(t, err)
+	require.Equal(t, msgProcessing.Id, dequeued.Id)
 
-	// wait consumer done
-	clock.AdvanceTime(restIfNoMsg * 2)
-	time.Sleep(restIfNoMsg * 2)
-
-	listQueueNames, _ := broker.ListQueue(ctx)
+	listQueueNames, err := broker.ListQueue(ctx)
+	require.NoError(t, err)
 	todayYYYYMMDD := time.Now().Format("2006-01-02")
 	rs, err := broker.GetStatsByDate(ctx, listQueueNames, todayYYYYMMDD)
 	require.NoError(t, err)
@@ -760,11 +710,12 @@ func TestBroker_GetStatsByDate(t *testing.T, broker Broker) {
 }
 
 func TestBroker_AutoDeduplicateMsgByDefault(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
 	msgWant := GenerateNewMsg()
-	ctx := context.Background()
+	ctx := testCtx
 
 	_, err := broker.Enqueue(ctx, msgWant)
 	require.NoError(t, err)
@@ -780,11 +731,12 @@ func TestBroker_AutoDeduplicateMsgByDefault(t *testing.T, broker Broker) {
 }
 
 func TestBroker_AutoDeduplicateFailedMsg(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
 	msgWant := GenerateNewMsg()
-	ctx := context.Background()
+	ctx := testCtx
 
 	now := time.Now()
 	clock := NewSimulatedClock(now)
@@ -820,11 +772,12 @@ func TestBroker_AutoDeduplicateFailedMsg(t *testing.T, broker Broker) {
 }
 
 func TestBroker_AutoDeduplicateCompletedMsg(t *testing.T, broker Broker) {
+	testCtx := testutil.Context(t)
 	require.NotNil(t, broker)
 	defer broker.Close()
 
 	msgWant := GenerateNewMsg()
-	ctx := context.Background()
+	ctx := testCtx
 
 	now := time.Now()
 	clock := NewSimulatedClock(now)

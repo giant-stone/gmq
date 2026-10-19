@@ -1,21 +1,22 @@
 package gmq_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/giant-stone/gmq/internal/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giant-stone/gmq/gmq"
 )
 
 func TestGmq_NewScheduler(t *testing.T) {
+	testCtx := testutil.Context(t)
 	broker := setupBrokerRedis(t)
 	defer broker.Close()
 
-	scheduler := gmq.NewScheduler(gmq.SchedulerParams{Ctx: context.Background(), Broker: broker})
+	scheduler := gmq.NewScheduler(gmq.SchedulerParams{Ctx: testCtx, Broker: broker})
 
 	err := scheduler.Run()
 	require.NoError(t, err, "scheduler.Run")
@@ -24,6 +25,7 @@ func TestGmq_NewScheduler(t *testing.T) {
 }
 
 func TestScheduler_Register(t *testing.T) {
+	testCtx := testutil.Context(t)
 	samples := []struct {
 		cronSpec string
 		wait     time.Duration
@@ -44,7 +46,7 @@ func TestScheduler_Register(t *testing.T) {
 
 		now := time.Now()
 
-		ctx := context.Background()
+		ctx := testCtx
 		scheduler := gmq.NewScheduler(gmq.SchedulerParams{Ctx: ctx, Broker: broker})
 
 		jobId, err := scheduler.Register(sample.cronSpec, sample.wantMsg)
@@ -86,6 +88,7 @@ func TestScheduler_Register(t *testing.T) {
 }
 
 func TestScheduler_Unregister(t *testing.T) {
+	testCtx := testutil.Context(t)
 	samples := []struct {
 		cronSpec string
 		wait     time.Duration
@@ -104,7 +107,7 @@ func TestScheduler_Unregister(t *testing.T) {
 		broker := setupBrokerRedis(t)
 		defer broker.Close()
 
-		ctx := context.Background()
+		ctx := testCtx
 		scheduler := gmq.NewScheduler(gmq.SchedulerParams{Ctx: ctx, Broker: broker})
 
 		jobId, err := scheduler.Register(sample.cronSpec, sample.wantMsg)

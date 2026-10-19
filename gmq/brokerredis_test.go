@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/giant-stone/gmq/internal/testutil"
 	"github.com/giant-stone/go/glogging"
 	"github.com/giant-stone/go/grand"
 	"github.com/giant-stone/go/gutil"
@@ -28,6 +29,7 @@ var (
 
 // setupBrokerRedis returns a redis broker for testing
 func setupBrokerRedis(tb testing.TB) (broker gmq.Broker) {
+	testCtx := testutil.Context(tb)
 	tb.Helper()
 
 	dsnRedis := os.Getenv("GMQ_RDS")
@@ -45,13 +47,13 @@ func setupBrokerRedis(tb testing.TB) (broker gmq.Broker) {
 	require.NoError(tb, err, "redis.ParseURL")
 
 	cli := redis.NewClient(opts)
-	err = cli.FlushDB(context.Background()).Err()
+	err = cli.FlushDB(testCtx).Err()
 	require.NoError(tb, err, "cli.FlushDB")
 
 	broker, err = gmq.NewBrokerFromRedisClient(cli, "")
 	require.NoError(tb, err, "gmq.NewBrokerFromRedisClient")
 
-	err = cli.FlushDB(context.Background()).Err()
+	err = cli.FlushDB(testCtx).Err()
 	require.NoError(tb, err, "cli.FlushDB")
 
 	universalRedisClient = cli
@@ -69,6 +71,7 @@ func getTestRedisClient(t testing.TB) *redis.Client {
 }
 
 func TestBrokerRedis_PauseAndResume(t *testing.T) {
+	testCtx := testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	defer broker.Close()
 
@@ -77,7 +80,7 @@ func TestBrokerRedis_PauseAndResume(t *testing.T) {
 	restIfNoMsg := time.Millisecond * time.Duration(10)
 	msgMaxTTL := time.Minute
 	glogging.Init([]string{"stderr"}, "warn")
-	srv := gmq.NewServer(context.Background(), broker, &gmq.Config{
+	srv := gmq.NewServer(testCtx, broker, &gmq.Config{
 		RestIfNoMsg: restIfNoMsg,
 		MsgMaxTTL:   msgMaxTTL,
 		QueueCfgs: map[string]*gmq.QueueCfg{
@@ -87,7 +90,7 @@ func TestBrokerRedis_PauseAndResume(t *testing.T) {
 		}})
 	mux := gmq.NewMux()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(testCtx)
 	defer cancel()
 	cli, err := gmq.NewClientFromBroker(broker)
 	gutil.ExitOnErr(err)
@@ -182,106 +185,127 @@ func TestBrokerRedis_PauseAndResume(t *testing.T) {
 }
 
 func TestBrokerRedis_Enqueue(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_Enqueue(t, broker)
 }
 
 func TestBrokerRedis_GetMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_GetMsg(t, broker)
 }
 
 func TestBrokerRedis_Dequeue(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_Dequeue(t, broker)
 }
 
 func TestBrokerRedis_DeleteMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_DeleteMsg(t, broker)
 }
 
 func TestBrokerRedis_DeleteQueue(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_DeleteQueue(t, broker)
 }
 
 func TestBrokerRedis_DeleteAgo(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_DeleteAgo(t, broker)
 }
 
 func TestBrokerRedis_Complete(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_Complete(t, broker)
 }
 
 func TestBrokerRedis_Fail(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_Fail(t, broker)
 }
 
 func TestBrokerRedis_ListMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_ListMsg(t, broker)
 }
 
 func TestBrokerRedis_ListFailed(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_ListFailed(t, broker)
 }
 
 func TestBrokerRedis_ListFailedMaxItems(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_ListFailedMaxItems(t, broker)
 }
 
 func TestBrokerRedis_GetStats(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_GetStats(t, broker)
 }
 
 func TestBrokerRedis_GetStatsByDate(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_GetStatsByDate(t, broker)
 }
 
 func TestBrokerRedis_AutoDeduplicateMsgByDefault(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_AutoDeduplicateMsgByDefault(t, broker)
 }
 
 func TestBrokerRedis_AutoDeduplicateFailedMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_AutoDeduplicateFailedMsg(t, broker)
 }
 
 func TestBrokerRedis_AutoDeduplicateCompletedMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	gmq.TestBroker_AutoDeduplicateCompletedMsg(t, broker)
 }
 
 func TestBrokerRedis_ClientEnqueue(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	testClient_Enqueue(t, broker)
 }
 
 func TestBrokerRedis_ClientDequeue(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	testClient_Dequeue(t, broker)
 }
 
 func TestBrokerRedis_ClientEnqueueOptQueueName(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	testClient_EnqueueOptQueueName(t, broker)
 }
 
 func TestBrokerRedis_ClientEnqueueDuplicatedMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	testClient_EnqueueDuplicatedMsg(t, broker)
 }
 
 func TestBrokerRedis_ClientEnqueueOptUniqueIn(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerRedis(t)
 	testClient_EnqueueOptUniqueIn(t, broker)
 }

@@ -24,3 +24,9 @@ echoMode:
 	@echo CGO_ENABLED=$(CGO_ENABLED)
 	@echo MODE=$(MODE)
 	@echo LDFLAGS=$(LDFLAGS)
+
+# Override with make test TEST_TIMEOUT=2m.
+TEST_TIMEOUT?=5m
+.PHONY: test
+test:
+	go test -timeout=$(TEST_TIMEOUT) ./...

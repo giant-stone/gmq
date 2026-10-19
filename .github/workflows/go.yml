@@ -8,6 +8,7 @@ on:
 
 jobs:
   build:
+    timeout-minutes: 10
     runs-on: ${{ matrix.os }}
 
     permissions:
@@ -46,4 +47,4 @@ jobs:
         run: echo "GMQ_RDS=redis://localhost:6379/14?dial_timeout=1s&read_timeout=1s&max_retries=1" >> $GITHUB_ENV
 
       - name: Test
-        run: go test -v ./...
+        run: go test -timeout=5m -v ./...

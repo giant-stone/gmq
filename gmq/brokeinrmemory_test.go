@@ -3,6 +3,7 @@ package gmq_test
 import (
 	"testing"
 
+	"github.com/giant-stone/gmq/internal/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giant-stone/gmq/gmq"
@@ -33,111 +34,133 @@ func getTestClientInMemory(t *testing.T) *gmq.Client {
 }
 
 func TestBrokerInMemory_Enqueue(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_Enqueue(t, broker)
 }
 
 func TestBrokerInMemory_GetMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_GetMsg(t, broker)
 }
 
 func TestBrokerInMemory_Dequeue(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_Dequeue(t, broker)
 }
 
 func TestBrokerInMemory_DeleteMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_DeleteMsg(t, broker)
 }
 
 func TestBrokerInMemory_DeleteQueue(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_DeleteQueue(t, broker)
 }
 
 func TestBrokerInMemory_DeleteAgo(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_DeleteAgo(t, broker)
 }
 
 func TestBrokerInMemory_Complete(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_Complete(t, broker)
 }
 
 func TestBrokerInMemory_Fail(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_Fail(t, broker)
 }
 
 func TestBrokerInMemory_ListQueue(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_ListQueue(t, broker)
 }
 
 func TestBrokerInMemory_ListMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_ListMsg(t, broker)
 }
 
 func TestBrokerInMemory_ListFailed(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_ListFailed(t, broker)
 }
 
 func TestBrokerInMemory_ListFailedMaxItems(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_ListFailedMaxItems(t, broker)
 }
 
 func TestBrokerInMemory_GetStats(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_GetStats(t, broker)
 }
 
 func TestBrokerInMemory_GetStatsByDate(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_GetStatsByDate(t, broker)
 }
 
 func TestBrokerInMemory_AutoDeduplicateMsgByDefault(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_AutoDeduplicateMsgByDefault(t, broker)
 }
 
 func TestBrokerInMemory_AutoDeduplicateFailedMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_AutoDeduplicateFailedMsg(t, broker)
 }
 
 func TestBrokerInMemory_AutoDeduplicateCompletedMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	gmq.TestBroker_AutoDeduplicateCompletedMsg(t, broker)
 }
 
 func TestBrokerInMemory_ClientEnqueue(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	testClient_Enqueue(t, broker)
 }
 
 func TestBrokerInMemory_ClientDequeue(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	testClient_Dequeue(t, broker)
 }
 
 func TestBrokerInMemory_ClientEnqueueOptQueueName(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	testClient_EnqueueOptQueueName(t, broker)
 }
 
 func TestBrokerInMemory_ClientEnqueueDuplicatedMsg(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	testClient_EnqueueDuplicatedMsg(t, broker)
 }
 
 func TestBrokerInMemory_ClientEnqueueOptUniqueIn(t *testing.T) {
+	testutil.Context(t)
 	broker := getTestBrokerInMemory(t)
 	testClient_EnqueueOptUniqueIn(t, broker)
 }
